@@ -1,2 +1,35 @@
+# dependencies
+node_modules/
+
+# env files — 保留 .env.template / .env.example 作为模板
+.env
+.env.*
+!.env.template
+!.env.example
+
+# build folders
+dist/
+build/
+coverage/
+
+# test artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+
+# logs
+logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+
+# codegraph index cache
 .codegraph/
+# 参考项目与素材（不提交）
 thirdparty/
