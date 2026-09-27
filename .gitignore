@@ -1,6 +1,2 @@
 .codegraph/
 thirdparty/
-
-# --- quickstart.sh 自动生成（勿删除）---
-/references/
-/workstation.code-workspace
