@@ -99,7 +99,7 @@ export default function DocsPage() {
             <rect x="14" y="21.5" width="12" height="1.5" rx="0.75" fill="#1a73e8"/>
             <rect x="14" y="25" width="8" height="1.5" rx="0.75" fill="#1a73e8"/>
           </svg>
-          <h1 className="docs-brand-name">Collaborative Docs</h1>
+          <h1 className="docs-brand-name">NexaDoc</h1>
         </div>
 
         <div className="docs-header-actions">

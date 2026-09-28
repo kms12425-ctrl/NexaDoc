@@ -1,6 +1,6 @@
-# Server — Collaborative Docs Signalling Server
+# Server — NexaDoc Signalling Server
 
-> Node.js + Express + Socket.IO backend for the Collaborative Docs editor.
+> Node.js + Express + Socket.IO backend for the NexaDoc editor.
 
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)

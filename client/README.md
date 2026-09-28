@@ -1,6 +1,6 @@
-# Client — Collaborative Docs Frontend
+# Client — NexaDoc Frontend
 
-> React + Vite frontend for the Collaborative Docs real-time editor.
+> React + Vite frontend for the NexaDoc real-time editor.
 
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
