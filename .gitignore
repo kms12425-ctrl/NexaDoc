@@ -31,5 +31,4 @@ Thumbs.db
 
 # codegraph index cache
 .codegraph/
-# 参考项目与素材（不提交）
 thirdparty/
