@@ -1,90 +1,91 @@
-import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 
-import { getDocs, saveDocs } from "../services/storage";
-import { generateId } from "../utils/generateId";
+import { getDocs, saveDocs } from '../services/storage'
+import { generateId } from '../utils/generateId'
+import type { DocumentMeta } from '../types'
 
 /* ── Friendly relative-time formatter ───────────────────────── */
-function timeAgo(timestamp) {
-  if (!timestamp) return "";
-  const diff = Date.now() - timestamp;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+function timeAgo(timestamp: number): string {
+  if (!timestamp) return ''
+  const diff = Date.now() - timestamp
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
 }
 
 /* ── Document colour palette (used for card accents) ────────── */
 const CARD_COLORS = [
-  "#4285f4", "#ea4335", "#34a853", "#fbbc04",
-  "#ff6d00", "#aa00ff", "#00acc1", "#e91e63",
-];
+  '#4285f4', '#ea4335', '#34a853', '#fbbc04',
+  '#ff6d00', '#aa00ff', '#00acc1', '#e91e63',
+]
 
-function cardColor(id) {
-  if (!id) return CARD_COLORS[0];
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
-  return CARD_COLORS[Math.abs(hash) % CARD_COLORS.length];
+function cardColor(id: string): string {
+  if (!id) return CARD_COLORS[0]
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash)
+  return CARD_COLORS[Math.abs(hash) % CARD_COLORS.length]
 }
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function DocsPage() {
-  const [docs, setDocs] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const inputRef = useRef(null);
-  const navigate = useNavigate();
+  const [docs, setDocs] = useState<DocumentMeta[]>([])
+  const [modalOpen, setModalOpen] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<DocumentMeta | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
-    const stored = getDocs();
-    queueMicrotask(() => setDocs(stored));
-  }, []);
+    const stored = getDocs()
+    queueMicrotask(() => setDocs(stored))
+  }, [])
 
   /* Focus input when modal opens */
   useEffect(() => {
     if (modalOpen && inputRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRef.current?.focus(), 50)
     }
-  }, [modalOpen]);
+  }, [modalOpen])
 
   const openModal = () => {
-    setNewName("");
-    setModalOpen(true);
-  };
+    setNewName('')
+    setModalOpen(true)
+  }
 
   const closeModal = () => {
-    setModalOpen(false);
-    setNewName("");
-  };
+    setModalOpen(false)
+    setNewName('')
+  }
 
   const createDoc = () => {
-    const name = newName.trim();
-    if (!name) return;
+    const name = newName.trim()
+    if (!name) return
 
-    const id = generateId(name);
-    const now = Date.now();
-    const updated = [...docs, { id, name, createdAt: now, updatedAt: now }];
-    setDocs(updated);
-    saveDocs(updated);
-    closeModal();
-    navigate("/" + id);
-  };
+    const id = generateId(name)
+    const now = Date.now()
+    const updated: DocumentMeta[] = [...docs, { id, name, createdAt: now, updatedAt: now }]
+    setDocs(updated)
+    saveDocs(updated)
+    closeModal()
+    navigate('/' + id)
+  }
 
-  const deleteDoc = (id) => {
-    const updated = docs.filter((d) => d.id !== id);
-    setDocs(updated);
-    saveDocs(updated);
-    setDeleteTarget(null);
-  };
+  const deleteDoc = (id: string) => {
+    const updated = docs.filter((d) => d.id !== id)
+    setDocs(updated)
+    saveDocs(updated)
+    setDeleteTarget(null)
+  }
 
   const filteredDocs = docs.filter((d) =>
     d.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  )
 
   return (
     <div className="docs-shell">
@@ -147,7 +148,7 @@ export default function DocsPage() {
         {/* Recent documents */}
         <section className="recent-section">
           <p className="section-label">
-            {searchQuery ? `Results for "${searchQuery}"` : "Recent documents"}
+            {searchQuery ? `Results for "${searchQuery}"` : 'Recent documents'}
             {filteredDocs.length > 0 && (
               <span className="doc-count">{filteredDocs.length}</span>
             )}
@@ -163,8 +164,8 @@ export default function DocsPage() {
                 <rect x="30" y="41" width="20" height="2" rx="1" fill="#bdc1c6"/>
                 <rect x="30" y="46" width="14" height="2" rx="1" fill="#bdc1c6"/>
               </svg>
-              <h3>{searchQuery ? "No documents found" : "No documents yet"}</h3>
-              <p>{searchQuery ? "Try a different search term." : "Create your first document to get started."}</p>
+              <h3>{searchQuery ? 'No documents found' : 'No documents yet'}</h3>
+              <p>{searchQuery ? 'Try a different search term.' : 'Create your first document to get started.'}</p>
               {!searchQuery && (
                 <button className="new-doc-btn" onClick={openModal}>
                   Create document
@@ -177,17 +178,17 @@ export default function DocsPage() {
                 <article
                   key={doc.id}
                   className="doc-card"
-                  onClick={() => navigate("/" + doc.id)}
+                  onClick={() => navigate('/' + doc.id)}
                   tabIndex={0}
-                  onKeyDown={(e) => e.key === "Enter" && navigate("/" + doc.id)}
+                  onKeyDown={(e) => e.key === 'Enter' && navigate('/' + doc.id)}
                   aria-label={`Open document: ${doc.name}`}
                 >
                   <div className="doc-card-preview" style={{ borderTop: `4px solid ${cardColor(doc.id)}` }}>
                     <div className="doc-lines">
-                      <div className="doc-line" style={{ width: "80%", background: cardColor(doc.id) + "33" }} />
-                      <div className="doc-line" style={{ width: "65%" }} />
-                      <div className="doc-line" style={{ width: "75%" }} />
-                      <div className="doc-line" style={{ width: "50%" }} />
+                      <div className="doc-line" style={{ width: '80%', background: cardColor(doc.id) + '33' }} />
+                      <div className="doc-line" style={{ width: '65%' }} />
+                      <div className="doc-line" style={{ width: '75%' }} />
+                      <div className="doc-line" style={{ width: '50%' }} />
                     </div>
                   </div>
 
@@ -201,7 +202,7 @@ export default function DocsPage() {
 
                   <button
                     className="doc-delete-btn"
-                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(doc); }}
+                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(doc) }}
                     title="Delete document"
                     aria-label={`Delete ${doc.name}`}
                   >
@@ -230,7 +231,7 @@ export default function DocsPage() {
               placeholder="Untitled document"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") createDoc(); if (e.key === "Escape") closeModal(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') createDoc(); if (e.key === 'Escape') closeModal(); }}
               maxLength={120}
               aria-label="Document name"
             />
@@ -273,5 +274,5 @@ export default function DocsPage() {
         </div>
       )}
     </div>
-  );
+  )
 }
