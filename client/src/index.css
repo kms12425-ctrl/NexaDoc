@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
    NEXADOC — index.css
-   Design tokens → Component styles → Quill overrides
+   Design tokens → Component styles → TipTap/ProseMirror overrides
    ═══════════════════════════════════════════════════════════════ */
 
 /* ── Design tokens ──────────────────────────────────────────── */
@@ -77,80 +77,6 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 p { margin: 0; }
 a { color: var(--blue-500); text-decoration: none; }
 a:hover { text-decoration: underline; }
-
-/* ═══════════════════════════════════════════════════════════════
-   QUILL FONT CLASSES  (Critical — must match Font.whitelist)
-   ═══════════════════════════════════════════════════════════════ */
-.ql-font-arial           { font-family: var(--font-arial); }
-.ql-font-times-new-roman { font-family: var(--font-times-new-roman); }
-.ql-font-roboto          { font-family: var(--font-roboto); }
-.ql-font-open-sans       { font-family: var(--font-open-sans); }
-.ql-font-lato            { font-family: var(--font-lato); }
-.ql-font-montserrat      { font-family: var(--font-montserrat); }
-.ql-font-poppins         { font-family: var(--font-poppins); }
-.ql-font-raleway         { font-family: var(--font-raleway); }
-.ql-font-ubuntu          { font-family: var(--font-ubuntu); }
-.ql-font-playfair        { font-family: var(--font-playfair); }
-.ql-font-merriweather    { font-family: var(--font-merriweather); }
-.ql-font-source-code-pro { font-family: var(--font-source-code-pro); }
-.ql-font-nunito          { font-family: var(--font-nunito); }
-
-/* ── Font picker labels (human-readable names in dropdown) ───── */
-.ql-snow .ql-picker.ql-font .ql-picker-label::before {
-  content: "Font";
-}
-/* Each picker item shows its own name in its own font */
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="arial"]::before           { content: "Arial";           font-family: Arial; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="times-new-roman"]::before { content: "Times New Roman"; font-family: "Times New Roman"; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="roboto"]::before          { content: "Roboto";          font-family: Roboto; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="open-sans"]::before       { content: "Open Sans";       font-family: "Open Sans"; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="lato"]::before            { content: "Lato";            font-family: Lato; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="montserrat"]::before      { content: "Montserrat";      font-family: Montserrat; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="poppins"]::before         { content: "Poppins";         font-family: Poppins; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="raleway"]::before         { content: "Raleway";         font-family: Raleway; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="ubuntu"]::before          { content: "Ubuntu";          font-family: Ubuntu; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="playfair"]::before        { content: "Playfair Display";font-family: "Playfair Display"; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="merriweather"]::before    { content: "Merriweather";    font-family: Merriweather; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="source-code-pro"]::before { content: "Source Code Pro"; font-family: "Source Code Pro"; }
-.ql-snow .ql-picker.ql-font .ql-picker-item[data-value="nunito"]::before          { content: "Nunito";          font-family: Nunito; }
-
-/* ── Font size classes (pt units — matches SizeClass.whitelist) ─ */
-.ql-size-8pt  { font-size: 8pt; }
-.ql-size-9pt  { font-size: 9pt; }
-.ql-size-10pt { font-size: 10pt; }
-.ql-size-11pt { font-size: 11pt; }
-.ql-size-12pt { font-size: 12pt; }
-.ql-size-14pt { font-size: 14pt; }
-.ql-size-16pt { font-size: 16pt; }
-.ql-size-18pt { font-size: 18pt; }
-.ql-size-20pt { font-size: 20pt; }
-.ql-size-24pt { font-size: 24pt; }
-.ql-size-28pt { font-size: 28pt; }
-.ql-size-32pt { font-size: 32pt; }
-.ql-size-36pt { font-size: 36pt; }
-.ql-size-48pt { font-size: 48pt; }
-.ql-size-72pt { font-size: 72pt; }
-
-/* Size picker labels
-   IMPORTANT: Quill snow.css sets content:'Normal' at specificity 0,4,0 on
-   .ql-snow .ql-picker.ql-size .ql-picker-item::before
-   Our selectors must include `.ql-picker.ql-size` to reach 0,5,0 and win. */
-.ql-snow .ql-picker.ql-size .ql-picker-label::before          { content: "Size" !important; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="8pt"]::before  { content: "8"  !important; font-size: 8pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="9pt"]::before  { content: "9"  !important; font-size: 9pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="10pt"]::before { content: "10" !important; font-size: 10pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="11pt"]::before { content: "11" !important; font-size: 11pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="12pt"]::before { content: "12" !important; font-size: 12pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="14pt"]::before { content: "14" !important; font-size: 14pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="16pt"]::before { content: "16" !important; font-size: 16pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="18pt"]::before { content: "18" !important; font-size: 18pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="20pt"]::before { content: "20" !important; font-size: 20pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="24pt"]::before { content: "24" !important; font-size: 24pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="28pt"]::before { content: "28" !important; font-size: 28pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="32pt"]::before { content: "32" !important; font-size: 32pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="36pt"]::before { content: "36" !important; font-size: 36pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="48pt"]::before { content: "48" !important; font-size: 48pt; }
-.ql-snow .ql-picker.ql-size .ql-picker-item[data-value="72pt"]::before { content: "72" !important; font-size: 72pt; }
 
 /* ═══════════════════════════════════════════════════════════════
    TOP BAR  (Editor page)
@@ -381,15 +307,67 @@ a:hover { text-decoration: underline; }
   margin-left: auto;
 }
 
-/* Quill wrapper */
-.quill-wrapper { display: flex; flex-direction: column; }
-
 /* ═══════════════════════════════════════════════════════════════
-   QUILL TOOLBAR  (override quill.snow.css)
+   TIPTAP / PROSEMIRROR EDITOR
    ═══════════════════════════════════════════════════════════════ */
-.ql-toolbar.ql-snow {
+
+/* 编辑器容器 */
+.tiptap-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ProseMirror 编辑区——替代 .ql-editor */
+.ProseMirror {
+  min-height: 75vh;
+  padding: 40px 64px;
+  font-size: 11pt;
+  line-height: 1.75;
+  color: var(--gray-900);
+  background: #fff;
+  caret-color: var(--blue-500);
+  outline: none;
+}
+
+/* 占位符（TipTap Placeholder 扩展） */
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--gray-400);
+  font-style: italic;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* 协作光标 */
+.collaboration-cursor__caret {
+  border-left: 1px solid #0d0d0d;
+  border-right: 1px solid #0d0d0d;
+  margin-left: -1px;
+  margin-right: -1px;
+  pointer-events: none;
+  position: relative;
+  word-break: normal;
+}
+
+.collaboration-cursor__label {
+  border-radius: 3px 3px 3px 0;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  left: -1px;
+  line-height: normal;
+  padding: 0.1rem 0.3rem;
+  position: absolute;
+  top: -1.4em;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* TipTap 工具栏样式——替代 .ql-toolbar */
+.tiptap-toolbar {
   border: none;
-  border-bottom: 1px solid var(--gray-200) !important;
+  border-bottom: 1px solid var(--gray-200);
   background: #fff;
   padding: 6px 12px;
   display: flex;
@@ -398,18 +376,21 @@ a:hover { text-decoration: underline; }
   align-items: center;
 }
 
-.ql-toolbar .ql-formats {
+.tiptap-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin-right: 6px;
   padding-right: 6px;
   border-right: 1px solid var(--gray-200);
 }
-.ql-toolbar .ql-formats:last-child {
+.tiptap-toolbar-group:last-child {
   border-right: none;
   margin-right: 0;
 }
 
-/* Toolbar buttons */
-.ql-toolbar button {
+/* 工具栏按钮 */
+.tiptap-btn {
   width: 28px;
   height: 28px;
   display: flex;
@@ -421,89 +402,42 @@ a:hover { text-decoration: underline; }
   cursor: pointer;
   padding: 0;
   transition: background var(--duration) var(--ease);
+  color: var(--gray-700);
 }
+.tiptap-btn:hover { background: var(--gray-100); color: var(--gray-900); }
+.tiptap-btn.is-active { background: var(--blue-100); color: var(--blue-600); }
 
-.ql-toolbar button svg { fill: var(--gray-700); width: 16px; height: 16px; }
-.ql-toolbar button:hover { background: var(--gray-100); }
-.ql-toolbar button:hover svg { fill: var(--gray-900); }
-.ql-toolbar button.ql-active { background: var(--blue-100); }
-.ql-toolbar button.ql-active svg { fill: var(--blue-600); }
-
-/* Pickers (font / size / align / color) */
-.ql-snow .ql-picker {
+/* 工具栏下拉框 */
+.tiptap-select {
   height: 28px;
   font-size: 13px;
   color: var(--gray-800);
-}
-.ql-snow .ql-picker-label {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: 0 8px;
-  height: 28px;
-  display: flex;
-  align-items: center;
   cursor: pointer;
+  background: transparent;
+  outline: none;
   transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
 }
-.ql-snow .ql-picker-label:hover {
-  background: var(--gray-100);
-  border-color: var(--gray-300);
-}
-.ql-snow .ql-picker.ql-expanded .ql-picker-label {
-  background: var(--blue-50);
-  border-color: var(--blue-500);
-  color: var(--blue-600);
-}
+.tiptap-select:hover { background: var(--gray-100); border-color: var(--gray-300); }
+.tiptap-select:focus { background: var(--blue-50); border-color: var(--blue-500); }
 
-/* Font picker wider, size picker fits "Size" label + numbers up to 72 */
-.ql-snow .ql-picker.ql-font { width: 140px; }
-.ql-snow .ql-picker.ql-size { width: 80px; }
-
-.ql-snow .ql-picker-options {
-  border: 1px solid var(--gray-200);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-xl);
-  padding: 4px;
-  overflow-y: auto;
-  max-height: 280px;
-}
-
-.ql-snow .ql-picker-item {
-  padding: 5px 10px;
+/* 颜色选择器 */
+.tiptap-color-input {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--gray-300);
   border-radius: var(--radius-sm);
-  font-size: 13px;
   cursor: pointer;
-  transition: background var(--duration) var(--ease);
-}
-.ql-snow .ql-picker-item:hover { background: var(--blue-50); color: var(--blue-600); }
-.ql-snow .ql-picker-item.ql-selected { background: var(--blue-100); color: var(--blue-600); font-weight: 500; }
-
-/* ═══════════════════════════════════════════════════════════════
-   QUILL EDITOR CONTENT
-   ═══════════════════════════════════════════════════════════════ */
-.ql-container.ql-snow { border: none !important; }
-
-.ql-editor {
-  min-height: 75vh;
-  padding: 40px 64px;
-  font-size: 11pt;
-  line-height: 1.75;
-  color: var(--gray-900);
-  background: #fff;
-  caret-color: var(--blue-500);
+  padding: 0;
+  background: transparent;
 }
 
-.ql-editor.ql-blank::before {
-  color: var(--gray-400);
-  font-style: italic;
-  left: 64px;
-}
-
-/* Page margin lines (Google Docs visual cue) */
-.ql-editor::before,
-.quill-wrapper::after {
-  content: "";
-  display: block;
+/* 响应式 */
+@media (max-width: 768px) {
+  .ProseMirror { padding: 24px 20px; }
+  .tiptap-toolbar { flex-wrap: wrap; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -897,17 +831,11 @@ a:hover { text-decoration: underline; }
 .modal-delete:hover { background: #c5221f; }
 
 /* ═══════════════════════════════════════════════════════════════
-   CURSORS  (Quill collaborator cursors)
-   ═══════════════════════════════════════════════════════════════ */
-.ql-cursor-flag { border-radius: 2px; padding: 1px 4px; font-size: 11px; font-weight: 600; }
-
-/* ═══════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
   .topbar { padding: 8px 10px; flex-wrap: wrap; }
   .docs-header { padding: 10px 16px; }
-  .ql-editor { padding: 24px 20px; }
   .docs-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
   .search-input { width: 130px; }
   .conn-badge { display: none; }

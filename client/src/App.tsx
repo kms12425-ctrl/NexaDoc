@@ -1,6 +1,6 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import DocsPage from "./components/DocsPage";
-import Editor from "./components/Editor";
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import DocsPage from './components/DocsPage'
+import Editor from './components/Editor'
 
 export default function App() {
   return (
@@ -10,5 +10,5 @@ export default function App() {
         <Route path="/:id" element={<Editor />} />
       </Routes>
     </BrowserRouter>
-  );
+  )
 }
