@@ -1,10 +1,11 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js",
+    "dev": "ts-node src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -15,9 +16,16 @@
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "socket.io": "^4.8.3",
     "ws": "^8.20.0",
-    "y-websocket": "^1.5.0",
+    "y-websocket": "^2.0.4",
     "yjs": "^13.6.30"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
   }
 }
