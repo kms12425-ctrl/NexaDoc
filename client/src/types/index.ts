@@ -25,7 +25,7 @@ export interface DocumentMeta {
   name: string
   createdAt: number
   updatedAt: number
-  // ── 预留字段（来自 docs 项目的架构借鉴）──
+  // ── 预留字段（后续阶段启用）──
   parentId?: string | null         // 文档树结构：父文档 ID（阶段六启用）
   deletedAt?: number | null        // 软删除时间戳（阶段六启用）
   abilities?: DocumentAbilities    // 当前用户对该文档的能力契约（阶段四启用）
