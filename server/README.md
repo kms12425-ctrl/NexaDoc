@@ -202,8 +202,8 @@ CMD ["node", "index.js"]
 Build and run:
 
 ```bash
-docker build -t collab-docs-server .
-docker run -p 3001:3001 -e CLIENT_ORIGIN=https://yourdomain.com collab-docs-server
+docker build -t nexadoc-server .
+docker run -p 3001:3001 -e CLIENT_ORIGIN=https://yourdomain.com nexadoc-server
 ```
 
 ---
