@@ -13,42 +13,32 @@ import Highlight from '@tiptap/extension-highlight'
 import FontFamily from '@tiptap/extension-font-family'
 import Placeholder from '@tiptap/extension-placeholder'
 import { createYjs } from '../services/yjsProvider'
+import { documentsApi } from '../services/api'
+import { useAuth } from '../contexts/AuthContext'
 import html2pdf from 'html2pdf.js'
 import { saveAs } from 'file-saver'
 import { Document, Packer, Paragraph, TextRun } from 'docx'
-import type { CollabSession, RemoteUserState } from '../types'
+import type { CollabSession, RemoteUserState, DocumentAbilities } from '../types'
 import { EditorToolbar } from './EditorToolbar'
 import { FontSize } from '../extensions/FontSize'
 import Link from '@tiptap/extension-link'
+import VersionHistoryModal from './VersionHistoryModal'
+import ShareModal from './ShareModal'
+import CommentPanel from './CommentPanel'
 
 /* ─── Word/character counter ─────────────────────────────────── */
 function countWords(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0
 }
 
-/* ─── Read document name from localStorage (pure helper) ─────── */
-function loadDocName(docId: string): string {
+/* ─── Read document name from localStorage (fallback only) ─────── */
+function loadDocNameFallback(docId: string): string {
   try {
     const docs = JSON.parse(localStorage.getItem('docs') || '[]')
     const doc = docs.find((d: { id: string }) => d.id === docId)
     return doc?.name || 'Untitled document'
   } catch {
     return 'Untitled document'
-  }
-}
-
-/* ─── Save document name to localStorage (pure helper) ─────────── */
-function saveDocName(docId: string, name: string): void {
-  try {
-    const docs = JSON.parse(localStorage.getItem('docs') || '[]')
-    const exists = docs.some((d: { id: string }) => d.id === docId)
-    if (!exists) return
-    const updated = docs.map((d: { id: string; name: string; updatedAt?: number }) =>
-      d.id === docId ? { ...d, name, updatedAt: Date.now() } : d
-    )
-    localStorage.setItem('docs', JSON.stringify(updated))
-  } catch {
-    // ignore
   }
 }
 
@@ -80,20 +70,30 @@ function convertAlignment(align?: string): 'left' | 'center' | 'right' | 'both' 
 export default function Editor() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { user } = useAuth()
 
-  // 标题状态——初始化从 localStorage 读取
-  const [title, setTitle] = useState(() => loadDocName(id || ''))
+  // 标题状态——先用 fallback 快速渲染，API 返回后更新
+  const [title, setTitle] = useState(() => loadDocNameFallback(id || ''))
+  const [abilities, setAbilities] = useState<DocumentAbilities>({})
   const [users, setUsers] = useState<RemoteUserState[]>([])
   const [activeUser, setActiveUser] = useState<string>('')
   const [mode, setMode] = useState<'edit' | 'view'>('edit')
   const [connected, setConnected] = useState(false)
   const [wordCount, setWordCount] = useState(0)
   const [charCount, setCharCount] = useState(0)
+  const [showHistory, setShowHistory] = useState(false)
+  const [showShare, setShowShare] = useState(false)
+  const [showComments, setShowComments] = useState(false)
 
   // 协作会话——同步创建，确保 useEditor 首次渲染就有 document
+  // 传入认证用户的 id/name/color，替代随机生成
   const [session, setSession] = useState<CollabSession | null>(() => {
     if (!id) return null
-    return createYjs(id)
+    return createYjs(id, user ? {
+      id: user.id,
+      name: user.displayName || user.username,
+      color: user.avatarColor,
+    } : undefined)
   })
   const titleFromRemoteRef = useRef(false)
 
@@ -200,10 +200,9 @@ export default function Editor() {
         }
 
         // 标题同步：接受远程标题更新
-        if (state.docTitle && state.docTitle !== loadDocName(id || '')) {
+        if (state.docTitle && state.docTitle !== title) {
           titleFromRemoteRef.current = true
           setTitle(state.docTitle)
-          saveDocName(id || '', state.docTitle)
         }
       })
 
@@ -227,10 +226,36 @@ export default function Editor() {
     session.provider.awareness.setLocalStateField('docTitle', title)
   }, [title, session])
 
-  /* ── 持久化标题到 localStorage ────────────────────────────── */
+  /* ── 从 API 获取文档元数据 + 权限 ────────────────────────── */
   useEffect(() => {
-    if (id) saveDocName(id, title)
-  }, [id, title])
+    if (!id) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const meta = await documentsApi.getMetadata(id)
+        if (!cancelled) {
+          setTitle(meta.name)
+          setAbilities(meta.abilities)
+          if (meta.abilities.canEdit === false) {
+            setMode('view')
+          }
+        }
+      } catch {
+        // 文档不存在或无权限——忽略，fallback 标题已设置
+      }
+    })()
+    return () => { cancelled = true }
+  }, [id])
+
+  /* ── 持久化标题到 API（debounce 1s）────────────────────────── */
+  useEffect(() => {
+    if (!id || !abilities.canEdit) return
+    if (titleFromRemoteRef.current) return
+    const timer = setTimeout(() => {
+      documentsApi.updateMetadata(id, title).catch(() => {})
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [id, title, abilities.canEdit])
 
   /* ── 广播本地选区变化（远程光标）───────────────────────── */
   useEffect(() => {
@@ -344,11 +369,9 @@ export default function Editor() {
   /* ── Handle title input change ─────────────────────────────── */
   const handleTitleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const newTitle = e.target.value
-      setTitle(newTitle)
-      saveDocName(id || '', newTitle)
+      setTitle(e.target.value)
     },
-    [id]
+    []
   )
 
   /* ── Render ─────────────────────────────────────────────── */
@@ -378,6 +401,7 @@ export default function Editor() {
               onChange={handleTitleChange}
               aria-label="Document title"
               spellCheck={false}
+              readOnly={abilities.canEdit === false}
             />
           </div>
         </div>
@@ -430,6 +454,32 @@ export default function Editor() {
             <button className="export-btn" onClick={exportPDF} title="Export as PDF">PDF</button>
             <button className="export-btn" onClick={exportDocx} title="Export as DOCX">DOCX</button>
           </div>
+
+          {/* Collaboration actions */}
+          <div className="collab-actions">
+            <button
+              className="collab-btn"
+              onClick={() => setShowShare(true)}
+              title="Share document"
+            >
+              Share
+            </button>
+            <button
+              className="collab-btn"
+              onClick={() => setShowHistory(true)}
+              title="Version history"
+              disabled={abilities.canViewHistory === false}
+            >
+              History
+            </button>
+            <button
+              className={`collab-btn ${showComments ? 'active' : ''}`}
+              onClick={() => setShowComments(!showComments)}
+              title="Comments"
+            >
+              Comments
+            </button>
+          </div>
         </div>
       </div>
 
@@ -452,12 +502,38 @@ export default function Editor() {
           </div>
 
           {/* TipTap 编辑器 */}
-          <div className="tiptap-wrapper">
+          <div className={`tiptap-wrapper ${showComments ? 'with-comments' : ''}`}>
             <EditorToolbar editor={editor} />
             <EditorContent editor={editor} />
           </div>
         </div>
+
+        {/* Comment side panel */}
+        {showComments && session && (
+          <CommentPanel
+            docId={id || ''}
+            canComment={abilities.canComment !== false}
+            onClose={() => setShowComments(false)}
+          />
+        )}
       </div>
+
+      {/* ── Modals ──────────────────────────────────────────── */}
+      {showShare && (
+        <ShareModal
+          docId={id || ''}
+          canShare={abilities.canShare !== false}
+          onClose={() => setShowShare(false)}
+        />
+      )}
+      {showHistory && session && (
+        <VersionHistoryModal
+          docId={id || ''}
+          ydoc={session.doc}
+          canViewHistory={abilities.canViewHistory !== false}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
     </>
   )
 }
