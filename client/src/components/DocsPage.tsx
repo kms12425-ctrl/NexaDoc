@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { getDocs, saveDocs } from '../services/storage'
-import { generateId } from '../utils/generateId'
+import { documentsApi, getNotificationWsUrl } from '../services/api'
+import { useAuth } from '../contexts/AuthContext'
 import type { DocumentMeta } from '../types'
 
 /* ── Friendly relative-time formatter ───────────────────────── */
@@ -33,7 +33,10 @@ function cardColor(id: string): string {
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function DocsPage() {
-  const [docs, setDocs] = useState<DocumentMeta[]>([])
+  const { user, logout } = useAuth()
+  const [docs, setDocs] = useState<(DocumentMeta & { shared?: boolean })[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<DocumentMeta | null>(null)
@@ -41,10 +44,49 @@ export default function DocsPage() {
   const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
-  useEffect(() => {
-    const stored = getDocs()
-    queueMicrotask(() => setDocs(stored))
+  /* ── Fetch documents from API ─────────────────────────────── */
+  const loadDocs = useCallback(async () => {
+    try {
+      const result = await documentsApi.list()
+      setDocs(result)
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load documents')
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    loadDocs()
+  }, [loadDocs])
+
+  /* ── 实时通知：监听 document-shared 事件 ──────────────────── */
+  useEffect(() => {
+    const wsUrl = getNotificationWsUrl()
+    if (!wsUrl.includes('token=')) return
+
+    const ws = new WebSocket(wsUrl)
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'document-shared') {
+          loadDocs()
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    ws.onerror = (err) => {
+      console.error('[notifications] WS error:', err)
+    }
+
+    return () => {
+      ws.close()
+    }
+  }, [loadDocs])
 
   /* Focus input when modal opens */
   useEffect(() => {
@@ -63,29 +105,35 @@ export default function DocsPage() {
     setNewName('')
   }
 
-  const createDoc = () => {
+  const createDoc = async () => {
     const name = newName.trim()
     if (!name) return
 
-    const id = generateId(name)
-    const now = Date.now()
-    const updated: DocumentMeta[] = [...docs, { id, name, createdAt: now, updatedAt: now }]
-    setDocs(updated)
-    saveDocs(updated)
-    closeModal()
-    navigate('/' + id)
+    try {
+      const doc = await documentsApi.create(name)
+      setDocs((prev) => [doc, ...prev])
+      closeModal()
+      navigate('/document/' + doc.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create document')
+    }
   }
 
-  const deleteDoc = (id: string) => {
-    const updated = docs.filter((d) => d.id !== id)
-    setDocs(updated)
-    saveDocs(updated)
-    setDeleteTarget(null)
+  const deleteDoc = async (id: string) => {
+    try {
+      await documentsApi.remove(id)
+      setDocs((prev) => prev.filter((d) => d.id !== id))
+      setDeleteTarget(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete document')
+    }
   }
 
   const filteredDocs = docs.filter((d) =>
     d.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
+  const ownedDocs = filteredDocs.filter((d) => !d.shared)
+  const sharedDocs = filteredDocs.filter((d) => d.shared)
 
   return (
     <div className="docs-shell">
@@ -104,6 +152,20 @@ export default function DocsPage() {
         </div>
 
         <div className="docs-header-actions">
+          {/* User avatar + logout */}
+          <div className="user-badge" title={user?.username}>
+            <div
+              className="avatar"
+              style={{ background: user?.avatarColor || '#1a73e8' }}
+            >
+              {(user?.displayName || user?.username || 'U')[0].toUpperCase()}
+            </div>
+            <span className="user-name">{user?.displayName || user?.username}</span>
+          </div>
+          <button className="logout-btn" onClick={logout} title="Sign out">
+            Sign out
+          </button>
+
           <div className="search-box">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -128,93 +190,139 @@ export default function DocsPage() {
 
       {/* ── Body ─────────────────────────────────────────────── */}
       <main className="docs-main">
-        {/* Start new — quick create card */}
-        <section className="start-section">
-          <p className="section-label">Start a new document</p>
-          <div className="start-grid">
-            <button className="start-card" onClick={openModal} id="start-blank-doc">
-              <div className="start-card-preview blank-preview">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#5f6368" strokeWidth="1.5">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                </svg>
-              </div>
-              <span>Blank document</span>
-            </button>
-          </div>
-        </section>
+        {error && <div className="docs-error-banner">{error}</div>}
 
-        <div className="section-divider" />
-
-        {/* Recent documents */}
-        <section className="recent-section">
-          <p className="section-label">
-            {searchQuery ? `Results for "${searchQuery}"` : 'Recent documents'}
-            {filteredDocs.length > 0 && (
-              <span className="doc-count">{filteredDocs.length}</span>
-            )}
-          </p>
-
-          {filteredDocs.length === 0 ? (
-            <div className="empty-state">
-              <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="80" height="80" rx="20" fill="#f1f3f4"/>
-                <path d="M24 20h26l10 10v30H24V20z" fill="#e8eaed"/>
-                <path d="M50 20v10h10" fill="none" stroke="#bdc1c6" strokeWidth="2"/>
-                <rect x="30" y="36" width="20" height="2" rx="1" fill="#bdc1c6"/>
-                <rect x="30" y="41" width="20" height="2" rx="1" fill="#bdc1c6"/>
-                <rect x="30" y="46" width="14" height="2" rx="1" fill="#bdc1c6"/>
-              </svg>
-              <h3>{searchQuery ? 'No documents found' : 'No documents yet'}</h3>
-              <p>{searchQuery ? 'Try a different search term.' : 'Create your first document to get started.'}</p>
-              {!searchQuery && (
-                <button className="new-doc-btn" onClick={openModal}>
-                  Create document
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="docs-grid">
-              {filteredDocs.map((doc) => (
-                <article
-                  key={doc.id}
-                  className="doc-card"
-                  onClick={() => navigate('/' + doc.id)}
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === 'Enter' && navigate('/' + doc.id)}
-                  aria-label={`Open document: ${doc.name}`}
-                >
-                  <div className="doc-card-preview" style={{ borderTop: `4px solid ${cardColor(doc.id)}` }}>
-                    <div className="doc-lines">
-                      <div className="doc-line" style={{ width: '80%', background: cardColor(doc.id) + '33' }} />
-                      <div className="doc-line" style={{ width: '65%' }} />
-                      <div className="doc-line" style={{ width: '75%' }} />
-                      <div className="doc-line" style={{ width: '50%' }} />
-                    </div>
-                  </div>
-
-                  <div className="doc-card-body">
-                    <div className="doc-card-name" title={doc.name}>{doc.name}</div>
-                    <div className="doc-card-meta">
-                      <span className="doc-card-id">{doc.id.slice(0, 12)}…</span>
-                      <span className="doc-card-time">{timeAgo(doc.updatedAt)}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    className="doc-delete-btn"
-                    onClick={(e) => { e.stopPropagation(); setDeleteTarget(doc) }}
-                    title="Delete document"
-                    aria-label={`Delete ${doc.name}`}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+        {loading ? (
+          <div className="docs-loading">Loading documents…</div>
+        ) : (
+          <>
+            {/* Start new — quick create card */}
+            <section className="start-section">
+              <p className="section-label">Start a new document</p>
+              <div className="start-grid">
+                <button className="start-card" onClick={openModal} id="start-blank-doc">
+                  <div className="start-card-preview blank-preview">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#5f6368" strokeWidth="1.5">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
                     </svg>
+                  </div>
+                  <span>Blank document</span>
+                </button>
+              </div>
+            </section>
+
+            <div className="section-divider" />
+
+            {/* Recent documents */}
+            {filteredDocs.length === 0 ? (
+              <div className="empty-state">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="80" height="80" rx="20" fill="#f1f3f4"/>
+                  <path d="M24 20h26l10 10v30H24V20z" fill="#e8eaed"/>
+                  <path d="M50 20v10h10" fill="none" stroke="#bdc1c6" strokeWidth="2"/>
+                  <rect x="30" y="36" width="20" height="2" rx="1" fill="#bdc1c6"/>
+                  <rect x="30" y="41" width="20" height="2" rx="1" fill="#bdc1c6"/>
+                  <rect x="30" y="46" width="14" height="2" rx="1" fill="#bdc1c6"/>
+                </svg>
+                <h3>{searchQuery ? 'No documents found' : 'No documents yet'}</h3>
+                <p>{searchQuery ? 'Try a different search term.' : 'Create your first document to get started.'}</p>
+                {!searchQuery && (
+                  <button className="new-doc-btn" onClick={openModal}>
+                    Create document
                   </button>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+                )}
+              </div>
+            ) : (
+              <>
+                {ownedDocs.length > 0 && (
+                  <section className="recent-section">
+                    <p className="section-label">
+                      My documents
+                      <span className="doc-count">{ownedDocs.length}</span>
+                    </p>
+                    <div className="docs-grid">
+                      {ownedDocs.map((doc) => (
+                        <article
+                          key={doc.id}
+                          className="doc-card"
+                          onClick={() => navigate('/document/' + doc.id)}
+                          tabIndex={0}
+                          onKeyDown={(e) => e.key === 'Enter' && navigate('/document/' + doc.id)}
+                          aria-label={`Open document: ${doc.name}`}
+                        >
+                          <div className="doc-card-preview" style={{ borderTop: `4px solid ${cardColor(doc.id)}` }}>
+                            <div className="doc-lines">
+                              <div className="doc-line" style={{ width: '80%', background: cardColor(doc.id) + '33' }} />
+                              <div className="doc-line" style={{ width: '65%' }} />
+                              <div className="doc-line" style={{ width: '75%' }} />
+                              <div className="doc-line" style={{ width: '50%' }} />
+                            </div>
+                          </div>
+
+                          <div className="doc-card-body">
+                            <div className="doc-card-name" title={doc.name}>{doc.name}</div>
+                            <div className="doc-card-meta">
+                              <span className="doc-card-id">{doc.id.slice(0, 12)}…</span>
+                              <span className="doc-card-time">{timeAgo(doc.updatedAt)}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            className="doc-delete-btn"
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(doc) }}
+                            title="Delete document"
+                            aria-label={`Delete ${doc.name}`}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
+                            </svg>
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {sharedDocs.length > 0 && (
+                  <section className="recent-section" style={{ marginTop: '24px' }}>
+                    <p className="section-label">
+                      Shared with me
+                      <span className="doc-count">{sharedDocs.length}</span>
+                    </p>
+                    <div className="docs-grid">
+                      {sharedDocs.map((doc) => (
+                        <article
+                          key={doc.id}
+                          className="doc-card shared-card"
+                          onClick={() => navigate('/document/' + doc.id)}
+                          tabIndex={0}
+                          onKeyDown={(e) => e.key === 'Enter' && navigate('/document/' + doc.id)}
+                          aria-label={`Open document: ${doc.name}`}
+                        >
+                          <div className="doc-card-preview" style={{ borderTop: `4px solid ${cardColor(doc.id)}` }}>
+                            <div className="doc-lines">
+                              <div className="doc-line" style={{ width: '80%', background: cardColor(doc.id) + '33' }} />
+                              <div className="doc-line" style={{ width: '65%' }} />
+                              <div className="doc-line" style={{ width: '75%' }} />
+                              <div className="doc-line" style={{ width: '50%' }} />
+                            </div>
+                          </div>
+
+                          <div className="doc-card-body">
+                            <div className="doc-card-name" title={doc.name}>{doc.name}</div>
+                            <div className="doc-card-meta">
+                              <span className="doc-card-time">{timeAgo(doc.updatedAt)}</span>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+          </>
+        )}
       </main>
 
       {/* ── Create document modal ─────────────────────────────── */}
