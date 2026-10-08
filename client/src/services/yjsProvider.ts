@@ -2,6 +2,7 @@ import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import type { CollabSession, UserAwareness } from '../types'
+import { getToken } from './api'
 
 // 用户颜色调色板（从原 Editor.jsx 移出）
 const USER_COLORS = [
@@ -33,7 +34,12 @@ export function createYjs(
 
   const persistence = new IndexeddbPersistence(docId, ydoc)
 
-  const provider = new WebsocketProvider(WS_URL, docId, ydoc)
+  const token = getToken()
+  const wsUrl = WS_URL
+  // y-websocket 会把 roomName 拼到 URL 路径：${wsUrl}/${roomName}
+  // 所以 token 必须附加在 roomName 的 query 参数里，否则 docId 会拼进 query string
+  const roomName = token ? `${docId}?token=${token}` : docId
+  const provider = new WebsocketProvider(wsUrl, roomName, ydoc)
 
   const user: UserAwareness = {
     id: customUser?.id || generateUserId(),

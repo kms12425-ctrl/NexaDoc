@@ -41,7 +41,7 @@ export interface RemoteUserState {
   docTitle?: string
 }
 
-// ── 预留：文档能力契约（来自 docs 项目的 get_abilities() 模式）──
+// ── 预留：文档能力契约（后续阶段实现 RBAC 时启用）──
 // 阶段四实现 RBAC 权限系统时，后端在文档序列化时返回这些布尔值，
 // 前端 UI 直接消费决定按钮/操作的显示与隐藏。
 // 阶段一所有能力默认 true（单用户无权限控制）。
@@ -53,4 +53,53 @@ export interface DocumentAbilities {
   canComment?: boolean
   canViewHistory?: boolean
   // 后续可扩展更多能力字段...
+}
+
+// ── 用户信息（从 API 返回）──
+export interface User {
+  id: string
+  username: string
+  displayName: string
+  avatarColor: string
+}
+
+// ── RBAC 角色（与 server/src/types.ts 的 Role 保持一致）──
+export const Role = {
+  READER: 'reader',
+  COMMENTER: 'commenter',
+  EDITOR: 'editor',
+  ADMIN: 'administrator',
+  OWNER: 'owner',
+} as const
+export type Role = typeof Role[keyof typeof Role]
+
+// ── 版本快照元数据 ──
+export interface SnapshotMeta {
+  _id: string
+  name: string
+  authorName: string
+  preview: string
+  createdAt: number
+}
+
+// ── 文档访问记录 ──
+export interface DocumentAccess {
+  _id?: string
+  userId: string
+  username: string
+  role: Role
+  invitedAt?: number
+  acceptedAt?: number | null
+}
+
+// ── 评论 ──
+export interface Comment {
+  _id: string
+  documentId: string
+  userId: string
+  authorName: string
+  body: string
+  resolved: boolean
+  createdAt: number
+  updatedAt: number
 }
