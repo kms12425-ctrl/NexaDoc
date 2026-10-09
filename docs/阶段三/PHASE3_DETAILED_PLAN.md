@@ -1,14 +1,14 @@
 # 阶段三详细计划：工程化升级
 
-> **目标**：在阶段一（JS→TS, Quill→TipTap, Yjs CRDT）和阶段二（三层架构 + MongoDB + JWT + RBAC）基础上，补齐工程化能力，使 `NexaDoc` 具备可测试、可部署、可维护、可治理的开源项目形态。
+> **目标**：在阶段一（JS→TS, Quill→TipTap, Yjs CRDT）和阶段二（三层架构 + MongoDB + JWT + RBAC）基础上，补齐生产级开源项目应具备的工程化能力，使 `nexadoc` 具备可测试、可部署、可维护、可治理的开源项目形态。
 
-> **原则**：保持 Node.js/TypeScript + React 技术栈不变；不引入异构后端。
+> **原则**：保持 Node.js/TypeScript + React 技术栈不变；按业界成熟项目的形态对齐，不直接搬运其"实现"。
 
 ---
 
 ## 目录
 
-- [工程化目标](#工程化目标)
+- [现状总览](#现状总览)
 - [Task 1：测试体系搭建](#task-1测试体系搭建)
 - [Task 2：容器化与一键启动](#task-2容器化与一键启动)
 - [Task 3：CI/CD 流水线](#task-3cicd-流水线)
@@ -21,9 +21,9 @@
 
 ---
 
-## 工程化目标
+## 现状总览
 
-| 维度 | 当前状态（v2） | 目标状态 | 对应 Task |
+| 维度 | 当前状态 | 目标状态 | 对应 Task |
 |---|---|---|---|
 | 测试 | 0 个测试文件 | 后端单元 + 前端单元 + e2e | Task 1 |
 | 容器化 | 无 Dockerfile/compose | Dockerfile + compose.yml | Task 2 |
@@ -159,7 +159,7 @@ Jobs：
 ### 3.2 docker-publish.yml（发布）
 
 触发：打 tag `v*`。
-- 构建多架构镜像并推送到 GHCR（`ghcr.io/<owner>/NexaDoc`）。
+- 构建多架构镜像并推送到 GHCR（`ghcr.io/<owner>/nexadoc`）。
 
 ### 3.3 依赖矩阵
 
@@ -198,7 +198,7 @@ VITE_YJS_WS_URL=ws://localhost:3001/yjs
 
 ### 4.2 分环境模板
 
-分环境模板示例：
+可按环境拆分模板：
 - `env.d/development.example`
 - `env.d/production.example`
 
@@ -314,7 +314,7 @@ server/src/
 
 ### 7.4 部署模板（可选）
 
-- `src/helm/` 或 `deploy/`：提供基础 Helm Chart / k8s manifest。
+- `src/helm/` 或 `deploy/`：提供基础 Helm Chart / k8s manifest，对齐业界部署形态。
 - `publiccode.yml`：政府/公共代码元数据（如需进入 DPG 体系）。
 
 ---
@@ -351,6 +351,24 @@ Task 5 (治理) ──┘──────────────────�
 | 5 | CONTRIBUTING/CHANGELOG/SECURITY 齐全；commit 规范有 hook 强制；README 含 Quick Start |
 | 6 | `server/src/modules/` 分模块；API 路径不变；测试全绿 |
 | 7 | /health、结构化日志、helmet CSP、i18n 框架就位 |
+
+---
+
+## 附：工程化能力对齐表
+
+| 工程化要素 | 本项目对应实现（阶段三产出） |
+|---|---|
+| `Dockerfile` + `compose.yml` | Task 2 |
+| `.github/workflows/*.yml` | Task 3 |
+| `env.d/development` | Task 4 |
+| `CONTRIBUTING.md` / `SECURITY.md` / `CHANGELOG.md` | Task 5 |
+| `documentation/adr/` | Task 5 |
+| `src/backend/core/tests/` | Task 1 |
+| `apps/e2e/__tests__/` | Task 1 |
+| `Makefile` | 可选，用 npm scripts 替代 |
+| `django-csp` / `django-silk` | Task 7（helmet / pino） |
+| `crowdin/` | Task 7.3 i18n 框架 |
+| `src/helm/` | Task 7.4（可选） |
 
 ---
 
