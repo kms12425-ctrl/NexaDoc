@@ -12,6 +12,8 @@ import { connectDB, getDB } from './db'
 import { mongoPersistence } from './persistence'
 import { register, login, requireAuth, AuthRequest } from './auth'
 import { addConnection, removeConnection } from './notifications'
+import { resolveAccess } from './rbac'
+import { decodeDocName } from './docId'
 import type { WebSocket } from 'ws'
 import documentsRouter from './routes/documents'
 import snapshotsRouter from './routes/snapshots'
@@ -35,14 +37,16 @@ app.use(
 app.use(express.json())
 
 /* ── Health-check ── */
-app.get('/health', (_req: Request, res: Response) => {
+app.get('/health', (_req: Request, res: Response) =>
+{
   res.json({ status: 'ok', uptime: process.uptime() })
 })
 
 /* ── Auth routes ── */
 app.post('/api/auth/register', register)
 app.post('/api/auth/login', login)
-app.get('/api/auth/me', requireAuth, (req: AuthRequest, res: Response) => {
+app.get('/api/auth/me', requireAuth, (req: AuthRequest, res: Response) =>
+{
   res.json({ user: req.user })
 })
 
@@ -53,7 +57,8 @@ app.use('/api/documents', requireAuth, commentsRouter)
 app.use('/api/documents', requireAuth, snapshotsRouter)
 
 /* ── Global error handler ── */
-app.use((err: Error, _req: Request, res: Response, _next: any) => {
+app.use((err: Error, _req: Request, res: Response, _next: any) =>
+{
   console.error('[api] ERROR:', err.message, err.stack)
   res.status(500).json({ error: 'Internal server error', detail: err.message })
 })
@@ -64,10 +69,12 @@ const wss = new WebSocketServer({ noServer: true, perMessageDeflate: true })
 // 注册 MongoDB 持久化层（y-websocket v2 用 setPersistence 全局设置）
 setPersistence(mongoPersistence)
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', (ws, req) =>
+{
   // 从 URL 提取 docName：/yjs/<docId> → <docId>
-  const pathname = new URL(req.url || '/', 'http://x').pathname
-  const docName = pathname.replace(/^\/yjs\/?/, '')
+  // 必须先解码（浏览器对非 ASCII 路径会 percent-encode），
+  // 否则 docName 与 REST 层使用的 docId 不是同一个 key（详见 docId.ts）
+  const docName = decodeDocName(new URL(req.url || '/', 'http://x').pathname)
 
   setupWSConnection(ws, req, { docName })
 })
@@ -75,14 +82,17 @@ wss.on('connection', (ws, req) => {
 // ── 通知 WebSocket Server（用户级实时推送）──
 const notifyWss = new WebSocketServer({ noServer: true })
 
-notifyWss.on('connection', (ws: WebSocket, userId: string) => {
+notifyWss.on('connection', (ws: WebSocket, userId: string) =>
+{
   addConnection(userId, ws)
 
-  ws.on('close', () => {
+  ws.on('close', () =>
+  {
     removeConnection(userId, ws)
   })
 
-  ws.on('error', (err) => {
+  ws.on('error', (err) =>
+  {
     console.error(`[notifications] WS error for user ${userId}:`, err)
     removeConnection(userId, ws)
   })
@@ -93,7 +103,19 @@ notifyWss.on('connection', (ws: WebSocket, userId: string) => {
 
 const server = http.createServer(app)
 
-server.on('upgrade', (request, socket, head) => {
+/** 拒绝 WebSocket 升级请求：写回状态行后立即关闭 socket */
+function rejectUpgrade(
+  socket: { write(chunk: string): unknown; destroy(): void },
+  status: number,
+  message: string
+): void
+{
+  socket.write(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\n\r\n`)
+  socket.destroy()
+}
+
+server.on('upgrade', (request, socket, head) =>
+{
   const url = new URL(request.url || '/', 'http://x')
   const pathname = url.pathname
 
@@ -101,70 +123,95 @@ server.on('upgrade', (request, socket, head) => {
   if (pathname === '/ws/notifications') {
     const token = url.searchParams.get('token')
     if (!token) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
-      socket.destroy()
+      rejectUpgrade(socket, 401, 'Unauthorized')
       return
     }
     try {
       const payload = jwt.verify(token, JWT_SECRET) as { id: string }
-      notifyWss.handleUpgrade(request, socket, head, (ws) => {
+      notifyWss.handleUpgrade(request, socket, head, (ws) =>
+      {
         notifyWss.emit('connection', ws, payload.id)
       })
     } catch {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
-      socket.destroy()
+      rejectUpgrade(socket, 401, 'Unauthorized')
     }
     return
   }
 
-  // ── 路由 2: /yjs/<docId> — 文档级 CRDT 同步 ──
+  // ── 路由 2: /yjs/<docId> — 文档级 CRDT 同步（JWT + 文档访问权限）──
   if (pathname.startsWith('/yjs')) {
     const token = url.searchParams.get('token')
     if (!token) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
-      socket.destroy()
+      rejectUpgrade(socket, 401, 'Unauthorized')
       return
     }
+
+    let userId: string
     try {
-      jwt.verify(token, JWT_SECRET)
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit('connection', ws, request)
-      })
+      userId = (jwt.verify(token, JWT_SECRET) as { id: string }).id
     } catch {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
-      socket.destroy()
+      rejectUpgrade(socket, 401, 'Unauthorized')
+      return
     }
+
+    // 与 REST 层共用同一套规则（rbac.resolveAccess），避免「界面能编辑、同步却被拒」
+    resolveAccess(decodeDocName(pathname), userId)
+      .then((access) =>
+      {
+        if (!access) {
+          rejectUpgrade(socket, 404, 'Document Not Found')
+          return
+        }
+        if (!access.abilities.canEdit) {
+          rejectUpgrade(socket, 403, 'Forbidden')
+          return
+        }
+        wss.handleUpgrade(request, socket, head, (ws) =>
+        {
+          wss.emit('connection', ws, request)
+        })
+      })
+      .catch((err) =>
+      {
+        console.error('[yjs] access check failed:', err)
+        rejectUpgrade(socket, 500, 'Internal Server Error')
+      })
     return
   }
 
   // ── 未知路径 ──
-  socket.write('HTTP/1.1 404 Not Found\r\n\r\n')
-  socket.destroy()
+  rejectUpgrade(socket, 404, 'Not Found')
 })
 
 /* ─── Start server ────────────────────────────────────────────── */
-async function start(): Promise<void> {
+async function start(): Promise<void>
+{
   await connectDB()
-  server.listen(PORT, () => {
+  server.listen(PORT, () =>
+  {
     console.log(`[server] Running on http://localhost:${PORT}`)
     console.log(`[server] Accepting connections from: ${CLIENT_ORIGIN}`)
     console.log(`[server] Yjs WebSocket on path: /yjs/<docName>`)
   })
 }
 
-start().catch((err) => {
+start().catch((err) =>
+{
   console.error('[server] Failed to start:', err)
   process.exit(1)
 })
 
 /* ─── Graceful shutdown ───────────────────────────────────────── */
-function shutdown(signal: string): void {
+function shutdown(signal: string): void
+{
   console.log(`\n[server] Received ${signal}. Shutting down gracefully…`)
-  server.close(() => {
+  server.close(() =>
+  {
     console.log('[server] HTTP server closed.')
     process.exit(0)
   })
-  setTimeout(() => {
+  setTimeout(() =>
+  {
     console.error('[server] Forced exit after timeout.')
     process.exit(1)
   }, 5000)
@@ -174,10 +221,12 @@ process.on('SIGTERM', () => shutdown('SIGTERM'))
 process.on('SIGINT', () => shutdown('SIGINT'))
 
 /* ─── Global error handlers ──────────────────────────────────── */
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason, promise) =>
+{
   console.error('[server] UNHANDLED REJECTION:', reason)
 })
 
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', (err) =>
+{
   console.error('[server] UNCAUGHT EXCEPTION:', err)
 })

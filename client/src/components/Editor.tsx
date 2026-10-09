@@ -27,12 +27,14 @@ import ShareModal from './ShareModal'
 import CommentPanel from './CommentPanel'
 
 /* ─── Word/character counter ─────────────────────────────────── */
-function countWords(text: string): number {
+function countWords(text: string): number
+{
   return text.trim() ? text.trim().split(/\s+/).length : 0
 }
 
 /* ─── Read document name from localStorage (fallback only) ─────── */
-function loadDocNameFallback(docId: string): string {
+function loadDocNameFallback(docId: string): string
+{
   try {
     const docs = JSON.parse(localStorage.getItem('docs') || '[]')
     const doc = docs.find((d: { id: string }) => d.id === docId)
@@ -44,20 +46,23 @@ function loadDocNameFallback(docId: string): string {
 
 /* ─── DOCX export helpers ──────────────────────────────────────── */
 // TipTap 的 fontSize 是 "12pt" 格式，docx 需要半磅（half-points）
-function convertFontSizeToHalfPt(fontSize?: string): number | undefined {
+function convertFontSizeToHalfPt(fontSize?: string): number | undefined
+{
   if (!fontSize) return undefined
   const pt = parseInt(fontSize.replace('pt', ''), 10)
   return pt ? pt * 2 : undefined
 }
 
 // TipTap 的 fontFamily 是 "Arial, sans-serif"，docx 只需要字体名
-function convertFontFamilyToName(fontFamily?: string): string | undefined {
+function convertFontFamilyToName(fontFamily?: string): string | undefined
+{
   if (!fontFamily) return undefined
   return fontFamily.split(',')[0].replace(/"/g, '').trim()
 }
 
 // TipTap 的 textAlign 值转换为 docx AlignmentType
-function convertAlignment(align?: string): 'left' | 'center' | 'right' | 'both' | undefined {
+function convertAlignment(align?: string): 'left' | 'center' | 'right' | 'both' | undefined
+{
   switch (align) {
     case 'center': return 'center'
     case 'right': return 'right'
@@ -67,7 +72,8 @@ function convertAlignment(align?: string): 'left' | 'center' | 'right' | 'both' 
 }
 
 /* ══════════════════════════════════════════════════════════════ */
-export default function Editor() {
+export default function Editor()
+{
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -87,7 +93,8 @@ export default function Editor() {
 
   // 协作会话——同步创建，确保 useEditor 首次渲染就有 document
   // 传入认证用户的 id/name/color，替代随机生成
-  const [session, setSession] = useState<CollabSession | null>(() => {
+  const [session, setSession] = useState<CollabSession | null>(() =>
+  {
     if (!id) return null
     return createYjs(id, user ? {
       id: user.id,
@@ -98,15 +105,18 @@ export default function Editor() {
   const titleFromRemoteRef = useRef(false)
 
   /* ── 连接状态监听 + 清理 ─────────────────────────────── */
-  useEffect(() => {
+  useEffect(() =>
+  {
     if (!session) return
 
-    const handleStatus = (event: { status: string }) => {
+    const handleStatus = (event: { status: string }) =>
+    {
       setConnected(event.status === 'connected')
     }
     session.provider.on('status', handleStatus)
 
-    return () => {
+    return () =>
+    {
       session.provider.off('status', handleStatus)
       session.destroy()
       setSession(null)
@@ -131,9 +141,9 @@ export default function Editor() {
         provider: session?.provider,
         user: session
           ? {
-              name: session.user.name,
-              color: session.user.color,
-            }
+            name: session.user.name,
+            color: session.user.color,
+          }
           : undefined,
       }),
 
@@ -170,7 +180,8 @@ export default function Editor() {
         openOnClick: false,
       }),
     ],
-    onUpdate: ({ editor }) => {
+    onUpdate: ({ editor }) =>
+    {
       const text = editor.getText()
       setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0)
       setCharCount(Math.max(0, text.length - 1))
@@ -178,17 +189,20 @@ export default function Editor() {
   }, [session?.doc, session?.provider])
 
   /* ── Awareness 监听（协作者列表 + 标题同步）────────────── */
-  useEffect(() => {
+  useEffect(() =>
+  {
     if (!session) return
 
     const awareness = session.provider.awareness
 
-    const handleAwarenessChange = () => {
+    const handleAwarenessChange = () =>
+    {
       const states = Array.from(awareness.getStates().entries())
       const list: RemoteUserState[] = []
       let typing = ''
 
-      states.forEach(([clientId, state]) => {
+      states.forEach(([clientId, state]) =>
+      {
         if (!state.user) return
         // 不显示自己
         if (clientId === awareness.clientID) return
@@ -211,13 +225,15 @@ export default function Editor() {
     }
 
     awareness.on('change', handleAwarenessChange)
-    return () => {
+    return () =>
+    {
       awareness.off('change', handleAwarenessChange)
     }
   }, [session, id])
 
   /* ── 广播标题变化到其他 peers ────────────────────────────── */
-  useEffect(() => {
+  useEffect(() =>
+  {
     if (!session) return
     if (titleFromRemoteRef.current) {
       titleFromRemoteRef.current = false
@@ -227,53 +243,61 @@ export default function Editor() {
   }, [title, session])
 
   /* ── 从 API 获取文档元数据 + 权限 ────────────────────────── */
-  useEffect(() => {
+  useEffect(() =>
+  {
     if (!id) return
     let cancelled = false
-    ;(async () => {
-      try {
-        const meta = await documentsApi.getMetadata(id)
-        if (!cancelled) {
-          setTitle(meta.name)
-          setAbilities(meta.abilities)
-          if (meta.abilities.canEdit === false) {
-            setMode('view')
+      ; (async () =>
+      {
+        try {
+          const meta = await documentsApi.getMetadata(id)
+          if (!cancelled) {
+            setTitle(meta.name)
+            setAbilities(meta.abilities)
+            if (meta.abilities.canEdit === false) {
+              setMode('view')
+            }
           }
+        } catch {
+          // 文档不存在或无权限——忽略，fallback 标题已设置
         }
-      } catch {
-        // 文档不存在或无权限——忽略，fallback 标题已设置
-      }
-    })()
+      })()
     return () => { cancelled = true }
   }, [id])
 
   /* ── 持久化标题到 API（debounce 1s）────────────────────────── */
-  useEffect(() => {
+  useEffect(() =>
+  {
     if (!id || !abilities.canEdit) return
     if (titleFromRemoteRef.current) return
-    const timer = setTimeout(() => {
-      documentsApi.updateMetadata(id, title).catch(() => {})
+    const timer = setTimeout(() =>
+    {
+      documentsApi.updateMetadata(id, title).catch(() => { })
     }, 1000)
     return () => clearTimeout(timer)
   }, [id, title, abilities.canEdit])
 
   /* ── 广播本地选区变化（远程光标）───────────────────────── */
-  useEffect(() => {
+  useEffect(() =>
+  {
     if (!editor || !session) return
 
-    const handleSelectionUpdate = ({ editor }: { editor: TipTapEditor }) => {
+    const handleSelectionUpdate = ({ editor }: { editor: TipTapEditor }) =>
+    {
       const { from, to } = editor.state.selection
       session.provider.awareness.setLocalStateField('selection', { from, to })
     }
 
     editor.on('selectionUpdate', handleSelectionUpdate)
-    return () => {
+    return () =>
+    {
       editor.off('selectionUpdate', handleSelectionUpdate)
     }
   }, [editor, session])
 
   /* ── 编辑/查看模式切换 ─────────────────────────────────── */
-  useEffect(() => {
+  useEffect(() =>
+  {
     if (!editor) return
     if (mode === 'view') {
       editor.setEditable(false)
@@ -283,7 +307,8 @@ export default function Editor() {
   }, [mode, editor])
 
   /* ── 导出 handlers ───────────────────────────────────────── */
-  const exportPDF = useCallback(() => {
+  const exportPDF = useCallback(() =>
+  {
     const content = document.querySelector('.ProseMirror') as HTMLElement | null
     if (!content) return
     html2pdf()
@@ -292,13 +317,15 @@ export default function Editor() {
       .save()
   }, [title])
 
-  const exportDocx = useCallback(async () => {
+  const exportDocx = useCallback(async () =>
+  {
     if (!editor) return
 
     const json = editor.getJSON()
     const paragraphs: Paragraph[] = []
 
-    const convertNode = (node: any) => {
+    const convertNode = (node: any) =>
+    {
       if (node.type === 'paragraph' || node.type === 'heading') {
         const textRuns: TextRun[] = []
         const headingLevel = node.attrs?.level
@@ -368,7 +395,8 @@ export default function Editor() {
 
   /* ── Handle title input change ─────────────────────────────── */
   const handleTitleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: React.ChangeEvent<HTMLInputElement>) =>
+    {
       setTitle(e.target.value)
     },
     []
@@ -388,12 +416,12 @@ export default function Editor() {
 
           <div className="brand">
             <svg className="brand-icon" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="40" height="40" rx="8" fill="#1a73e8"/>
-              <path d="M10 10h14l6 6v14H10V10z" fill="white" opacity="0.9"/>
-              <path d="M24 10v6h6" fill="none" stroke="#1a73e8" strokeWidth="1.5"/>
-              <rect x="14" y="18" width="12" height="1.5" rx="0.75" fill="#1a73e8"/>
-              <rect x="14" y="21.5" width="12" height="1.5" rx="0.75" fill="#1a73e8"/>
-              <rect x="14" y="25" width="8" height="1.5" rx="0.75" fill="#1a73e8"/>
+              <rect width="40" height="40" rx="8" fill="#1a73e8" />
+              <path d="M10 10h14l6 6v14H10V10z" fill="white" opacity="0.9" />
+              <path d="M24 10v6h6" fill="none" stroke="#1a73e8" strokeWidth="1.5" />
+              <rect x="14" y="18" width="12" height="1.5" rx="0.75" fill="#1a73e8" />
+              <rect x="14" y="21.5" width="12" height="1.5" rx="0.75" fill="#1a73e8" />
+              <rect x="14" y="25" width="8" height="1.5" rx="0.75" fill="#1a73e8" />
             </svg>
             <input
               className="doc-title-input"
@@ -434,16 +462,16 @@ export default function Editor() {
             {mode === 'edit' ? (
               <>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
                 Editing
               </>
             ) : (
               <>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
                 </svg>
                 Viewing
               </>
@@ -530,6 +558,7 @@ export default function Editor() {
         <VersionHistoryModal
           docId={id || ''}
           ydoc={session.doc}
+          editor={editor}
           canViewHistory={abilities.canViewHistory !== false}
           onClose={() => setShowHistory(false)}
         />

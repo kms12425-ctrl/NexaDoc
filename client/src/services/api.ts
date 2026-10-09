@@ -12,15 +12,18 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
 /* ── Token 管理 ────────────────────────────────────────────── */
 const TOKEN_KEY = 'cdocs_token'
 
-export function getToken(): string | null {
+export function getToken(): string | null
+{
   return sessionStorage.getItem(TOKEN_KEY)
 }
 
-export function setToken(token: string): void {
+export function setToken(token: string): void
+{
   sessionStorage.setItem(TOKEN_KEY, token)
 }
 
-export function clearToken(): void {
+export function clearToken(): void
+{
   sessionStorage.removeItem(TOKEN_KEY)
 }
 
@@ -28,7 +31,8 @@ export function clearToken(): void {
 async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
-): Promise<T> {
+): Promise<T>
+{
   const token = getToken()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -52,7 +56,8 @@ async function apiFetch<T>(
 }
 
 /* ── Auth API ────────────────────────────────────────────────── */
-export interface AuthResponse {
+export interface AuthResponse
+{
   token: string
   user: User
 }
@@ -72,7 +77,8 @@ export const authApi = {
 }
 
 /* ── Documents API ───────────────────────────────────────────── */
-export interface DocumentWithAbilities extends DocumentMeta {
+export interface DocumentWithAbilities extends DocumentMeta
+{
   abilities: DocumentAbilities
   shared?: boolean
 }
@@ -106,16 +112,17 @@ export const snapshotsApi = {
   list: (docId: string) =>
     apiFetch<SnapshotMeta[]>(`/api/documents/${docId}/snapshots`),
 
-  create: (docId: string, name: string, preview: string) =>
+  create: (docId: string, name: string, preview: string, content: string) =>
     apiFetch<{ status: string; id: string }>(`/api/documents/${docId}/snapshots`, {
       method: 'POST',
-      body: JSON.stringify({ name, preview }),
+      body: JSON.stringify({ name, preview, content }),
     }),
 
   restore: (docId: string, snapshotId: string) =>
-    apiFetch<{ crdtState: number[] }>(`/api/documents/${docId}/snapshots/${snapshotId}/restore`, {
-      method: 'POST',
-    }),
+    apiFetch<{ crdtState: number[]; contentJson: string | null }>(
+      `/api/documents/${docId}/snapshots/${snapshotId}/restore`,
+      { method: 'POST' }
+    ),
 }
 
 /* ── Sharing API ─────────────────────────────────────────────── */
@@ -153,7 +160,8 @@ export const commentsApi = {
 }
 
 /* ── Notification WebSocket URL ──────────────────────────────── */
-export function getNotificationWsUrl(): string {
+export function getNotificationWsUrl(): string
+{
   const token = getToken()
   const yjsUrl = import.meta.env.VITE_YJS_URL || 'ws://localhost:5173/yjs'
   const base = yjsUrl.replace(/\/yjs\/?$/, '')
