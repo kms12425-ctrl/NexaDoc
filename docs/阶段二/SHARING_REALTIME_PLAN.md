@@ -1,7 +1,9 @@
-# 阶段二增量：分享 + 实时通知
+# 阶段二增量：即时分享 + 实时通知
 
-> 分享体验目标：邀请即生效、被邀请者即时在主页收到通知、
+> 分享体验设计：邀请即生效、被邀请者即时在主页收到通知、
 > 支持通过链接直接访问、WebSocket 统一技术栈（不引入 SSE/轮询）。
+>
+> 架构设计思路见 [附录：设计思路参考](#附录设计思路参考)。
 
 ## 目录
 
@@ -1033,3 +1035,199 @@ Step 9 (vite.config.ts)   ──┘
 
 每完成一个 Step 后执行 `npx tsc --noEmit` 验证编译。
 全部完成后执行端到端验证（两个浏览器窗口）。
+
+---
+
+## 附录：设计思路参考
+
+> 以下整理了本方案在设计过程中参考的业界协作产品的架构模式，
+> 提取了关键设计思路并适配到我们的 Node.js/TypeScript 技术栈。
+
+### A1. 共享文档列表查询
+
+**业界方案**（基于文档访问记录的 UNION 查询）：
+
+```python
+# 文档出现在用户列表中的两个条件（UNION）：
+# 1. 用户有 DocumentAccess 记录（直接或通过团队）
+access_documents_ids = DocumentAccess.objects.filter(
+    Q(user=user) | Q(team__in=user.teams)
+).values_list("document_id", flat=True)
+
+# 2. 用户有 LinkTrace 记录（曾通过链接访问过）且文档不是 restricted
+traced_documents_ids = LinkTrace.objects.filter(user=user)
+    .exclude(document__link_reach=LinkReachChoices.RESTRICTED)
+    .values_list("document_id", flat=True)
+
+return queryset.filter(id__in=access_documents_ids.union(traced_documents_ids))
+```
+
+**我们的适配**（Step 1）：
+- 不需要 `LinkTrace`——我们只有按用户名邀请，没有链接访问追踪的需求（后续可加）
+- 不需要团队权限——我们是单用户模型
+- 核心思路一致：**union of owned + shared**
+
+```typescript
+// 我们的实现（简化版）
+const ownedDocs = db.collection('documents').find({ ownerUserId: userId })
+const accessRecords = db.collection('document_access').find({ userId })
+const sharedDocs = db.collection('documents').find({ _id: { $in: docIds } })
+return [...ownedResult, ...sharedResult]
+```
+
+### A2. 能力契约（Abilities）模式
+
+**业界方案**（`get_abilities(user)` 能力契约模式）：
+
+每个模型都实现 `get_abilities(user)` 返回一个 **能力字典**，如：
+
+```python
+{
+    "destroy": True,       # can delete
+    "partial_update": True, # can edit
+    "retrieve": True,      # can view
+    "comment": True,       # can comment
+    "accesses_manage": True, # can share
+    "versions_list": True, # can view history
+    "link_configuration": True, # can change link settings
+    "invite_owner": False, # can invite as owner
+    "leave": False,        # can leave the document
+    ...
+}
+```
+
+权限类直接检查 `abilities.get(view.action, False)`，前端直接消费这些布尔值控制 UI。
+
+**我们的适配**（已实现 `server/src/rbac.ts`）：
+
+```typescript
+// 我们的能力契约（简化版，6 个能力）
+getAbilities(role) → {
+  canView, canEdit, canDelete, canShare, canComment, canViewHistory
+}
+```
+
+**设计要点**：
+- `set_role_to` 列表——告诉你"能把别人设成什么角色"（owner 不能被 admin 设置等）。我们目前没有这个限制，后续可加。
+- 角色继承——取最高优先级角色。我们没有树结构，暂不需要。
+
+### A3. 邀请模型——无 pending/accepted 状态
+
+**业界方案**（邀请即生效，无 pending/accepted 状态）：
+
+```python
+class Invitation(BaseModel):
+    email = models.EmailField()
+    document = models.ForeignKey(Document)
+    role = models.CharField(choices=RoleChoices.choices)
+    issuer = models.ForeignKey(User)
+    # 没有 status 字段，没有 accepted_at 字段
+    # is_expired 只检查时间过期
+```
+
+`Invitation` 只是一个记录"email X 被邀请到文档 Y"，没有接受/拒绝流程。
+真正的权限通过 `DocumentAccess` 记录控制——`DocumentAccess` 一旦创建，用户立即获得权限。
+
+另外有独立的 `DocumentAskForAccess` 模型（"请求访问"功能），它有 `accept()` 方法：
+
+```python
+def accept(self, role=None):
+    DocumentAccess.objects.update_or_create(
+        document=self.document, user=self.user,
+        defaults={"role": role})
+    self.delete()
+```
+
+**我们的适配**：
+- 和我们的设计一致——邀请即生效，`document_access` upsert 后立即有权限
+- 我们不需要 `Invitation` 模型——我们按用户名邀请（用户必须已注册），不需要邮件邀请
+- "请求访问"功能可作为后续增强
+
+### A4. 实时通知架构——外部微服务 + HTTP 通信
+
+**业界方案**：
+
+部分协作产品采用**独立的 WebSocket 微服务**处理实时连接，后端通过 HTTP API 和协作服务器通信：
+
+```python
+# CollaborationService 向协作服务器发 HTTP 请求
+class CollaborationService:
+    def reset_connections(self, document_id, user_id=None):
+        # POST /reset-connections/?room=<doc_id>
+        # 告诉协作服务器："这个文档的权限变了，踢掉相关用户"
+        response = requests.post(
+            f"{settings.COLLABORATION_API_URL}reset-connections/?room={room}",
+            headers={"Authorization": settings.COLLABORATION_SERVER_SECRET})
+
+# 在 DocumentAccess 变更时通过 Celery 异步触发
+@receiver(post_save, sender=DocumentAccess)
+def document_access_post_save(sender, instance, created, **kwargs):
+    reset_service_connections_in_cascade.delay(str(instance.document.id))
+```
+
+**关键设计**：
+- Django 不直接管 WebSocket——它只管 REST API 和权限
+- 协作服务器独立运行，通过 HTTP 接收"重置连接"指令
+- 权限变更 → Celery 异步任务 → HTTP 通知协作服务器 → 协作服务器踢掉受影响用户 → 用户重连时带着新权限
+
+**我们的适配**（Step 2-4）：
+
+我们更简单——**单进程**架构（Express + WS 在同一个进程），不需要 HTTP 跨服务通信：
+
+```
+微服务方案:  后端 ──HTTP──→ 协作 WS Server ──WS──→ Browser
+我们:       Express + WS Server (同进程) ──WS──→ Browser
+            └── notifyUser() 直接调用，无需 HTTP
+```
+
+```typescript
+// 我们的实现——内存级直接调用
+// sharing.ts 中：
+notifyUser(targetUserId, { type: 'document-shared', ... })
+// notifications.ts 中：
+connections.get(userId)?.forEach(ws => ws.send(JSON.stringify(event)))
+```
+
+**设计要点**：
+- `reset_connections` 模式——权限变更时踢掉用户强制重连。我们暂时不需要（邀请是新增权限，不是修改/删除），但后续实现"移除协作者"时可采用：移除后向被移除用户推送 `{ type: 'access-revoked' }` 事件，前端自动跳回主页。
+- 编辑冲突检测——检查是否有人在线编辑。我们暂不需要，但思路有价值。
+
+### A5. LinkTrace——链接访问追踪
+
+**业界方案**（链接访问追踪模型）：
+
+```python
+class LinkTrace(BaseModel):
+    document = models.ForeignKey(Document)
+    user = models.ForeignKey(User)
+    # 唯一约束: (user, document)
+
+# 用户通过链接访问文档时自动创建
+def retrieve(self, request, *args, **kwargs):
+    instance = self.get_object()
+    if user.is_authenticated and not instance.link_traces.filter(user=user).exists():
+        LinkTrace.objects.create(document=instance, user=request.user)
+```
+
+`LinkTrace` 的作用：用户通过链接访问过一个非 restricted 文档后，该文档会永久出现在用户的文档列表中（即使没有 `DocumentAccess` 记录）。
+
+**我们的适配**：
+- 我们目前不需要 `LinkTrace`——我们只有按用户名邀请，所有共享文档都有 `document_access` 记录
+- 如果后续加"链接分享 + 任何人可访问"功能，可以采用这个模式
+
+### A6. 总结：采用了什么，没采用什么
+
+| 设计特性 | 我们是否采用 | 原因 |
+|---------------|-------------|------|
+| Abilities 能力契约模式 | ✅ 已实现 | 前端直接消费布尔值控制 UI，简洁高效 |
+| 邀请即生效（无 pending） | ✅ 本方案核心 | 体验流畅 |
+| 共享文档出现在列表 | ✅ Step 1 | 核心需求 |
+| 外部 WebSocket 微服务 | ❌ 简化为单进程 | 我们不需要微服务架构 |
+| Celery 异步任务 | ❌ 直接同步调用 | 单进程无需异步队列 |
+| LinkTrace 链接追踪 | ❌ 暂不需要 | 后续加链接分享时再考虑 |
+| 角色继承（树结构） | ❌ 暂不需要 | 我们没有文档树 |
+| `set_role_to` 限制 | ❌ 暂不需要 | 后续增强权限管理时再加 |
+| 编辑冲突检测 | ❌ 暂不需要 | CRDT 已解决冲突 |
+| 请求访问（AskForAccess） | ❌ 暂不需要 | 后续增强 |
+| `reset_connections` 模式 | 📝 后续采用 | 实现"移除协作者"时参考 |
+

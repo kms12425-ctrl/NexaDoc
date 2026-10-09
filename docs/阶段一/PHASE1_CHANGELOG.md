@@ -5,6 +5,8 @@
 > - **新建文件**：15 个
 > - **修改文件**：6 个
 > - **删除文件**：14 个
+>
+> 项目根目录：`NexaDoc`
 
 ---
 
@@ -396,7 +398,7 @@ export interface DocumentMeta {
   name: string
   createdAt: number
   updatedAt: number
-  // ── 预留字段（为后续阶段准备）──
+  // ── 预留字段（后续阶段启用）──
   parentId?: string | null         // 文档树结构（阶段六启用）
   deletedAt?: number | null        // 软删除时间戳（阶段六启用）
   abilities?: DocumentAbilities    // 能力契约（阶段四启用）
@@ -412,7 +414,7 @@ export interface RemoteUserState {
   docTitle?: string
 }
 
-// ── 预留：文档能力契约（后端返回能力布尔值，前端消费）──
+// ── 预留：文档能力契约（后续阶段实现 RBAC 时启用）──
 export interface DocumentAbilities {
   canView?: boolean
   canEdit?: boolean
@@ -425,7 +427,7 @@ export interface DocumentAbilities {
 
 **设计说明**：
 - `DocumentMeta` 中的 `parentId`、`deletedAt`、`abilities` 为预留字段，当前阶段不使用，为阶段四（RBAC 权限）和阶段六（文档树+软删除）做准备
-- `DocumentAbilities` 接口采用能力契约模式——后端返回能力布尔值，前端直接消费决定 UI 显示/隐藏
+- `DocumentAbilities` 接口采用 `get_abilities()` 契约模式——后端返回能力布尔值，前端直接消费决定 UI 显示/隐藏
 
 ---
 

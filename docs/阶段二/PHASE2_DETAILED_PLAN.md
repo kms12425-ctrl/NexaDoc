@@ -1,6 +1,6 @@
 # 阶段二详细计划：三层架构 + 持久化 + 用户系统 + RBAC
 
-> **目标**：在阶段一（JS→TS, Quill→TipTap, Socket.IO→Yjs WS）基础上，将 `NexaDoc` 从「2 层架构 + localStorage」升级到「三层服务架构 + MongoDB 持久化 + JWT 认证 + RBAC 权限」（保留 Node.js/TypeScript 技术栈）。
+> **目标**：在阶段一（JS→TS, Quill→TipTap, Socket.IO→Yjs WS）基础上，将项目从「2 层架构 + localStorage」升级到「三层服务架构 + MongoDB 持久化 + JWT 认证 + RBAC 权限」（保留 Node.js/TypeScript 技术栈）。
 
 ---
 
@@ -287,7 +287,7 @@ const DEBOUNCE_MS = 1000
 const timers = new Map<string, NodeJS.Timeout>()
 
 /**
- * Yjs 持久化层——处理文档加载与变更持久化。
+ * Yjs 持久化层——参考 HocusPocus 的 onLoadDocument/onChange 模式设计。
  * y-websocket v2 的 setupWSConnection 第三参数 options.persistence
  * 需要提供 bindState(docName, ydoc) 和 writeState(docName, ydoc)。
  */
@@ -406,6 +406,7 @@ const ROLE_PRIORITY: Record<Role, number> = {
 }
 
 /**
+ * 能力契约方法
  * 根据用户在文档上的角色返回能力契约。
  * 前端 UI 直接消费这些布尔值决定按钮/操作的显示与隐藏。
  */
@@ -2139,7 +2140,23 @@ npm run build && echo "✓"
 
 ---
 
-## 五、风险与注意事项
+## 五、架构设计总结
+
+| 维度 | 设计选型 | 实现文件 |
+|---|---|---|
+| 后端框架 | Express + 自建路由 | `server/src/server.ts`, `routes/*.ts` |
+| 数据库 | MongoDB | `server/src/db.ts` |
+| 认证 | JWT (jsonwebtoken + bcryptjs) | `server/src/auth.ts` |
+| 权限模型 | Express 中间件 + `rbac.ts` | `server/src/rbac.ts` |
+| 能力契约 | `getAbilities()` | `server/src/rbac.ts` |
+| 协作服务 | y-websocket + MongoDB 持久化 | `server/src/persistence.ts` |
+| 前端架构 | React + Vite + `features/` | `client/src/features/` |
+| 文档模型 | MongoDB doc + parentId（预留） | `server/src/types.ts` |
+| 软删除 | `deletedAt: Date \| null` | `server/src/types.ts` |
+
+---
+
+## 六、风险与注意事项
 
 ### 风险 1: y-websocket v2 persistence API
 `setupWSConnection` 第三参数的 `persistence` 接口需在 Day 0 验证。如果 v2 不支持，回退方案是**不使用 `setupWSConnection` 的 persistence 参数**，改为在 `wss.on('connection')` 中手动调用 `mongoPersistence.bindState()` / `writeState()`：
@@ -2173,12 +2190,12 @@ MongoDB 的 `_id` 是 `ObjectId`，但 `comment.ts` 中 `documentId: new ObjectI
 
 ---
 
-## 六、与 UPGRADE_PLAN.md 的差异
+## 七、与 UPGRADE_PLAN.md 的差异
 
 原 `UPGRADE_PLAN.md` 的三阶段计划已部分完成。本计划做了以下调整：
 
-1. **Phase 2 范围扩大**：原计划 Phase 2 仅含 MongoDB + 版本历史 + 用户 schema 预留；本计划将 JWT 认证、RBAC 权限、分享/评论也纳入，因为权限系统是本阶段的核心。
+1. **Phase 2 范围扩大**：原计划 Phase 2 仅含 MongoDB + 版本历史 + 用户 schema 预留；本计划将 JWT 认证、RBAC 权限、分享/评论也纳入，因为权限系统是协作架构的核心。
 2. **Phase 1 代码修改清单**：明确列出 9 个需修改文件 + 18 个新建文件，每个都有具体代码和验证命令。
 3. **feature-based 前端**：新增 Day 9 的目录重构步骤。
-4. **RBAC 完整实现**：新增 `server/src/rbac.ts`，完整实现角色权限模型与能力契约。
+4. **RBAC 完整实现**：新增 `server/src/rbac.ts`，完整实现角色定义 + `get_abilities()` 能力契约。
 5. **WebSocket 层认证**：新增 Day 5 的 WS token 验证 + 权限检查。

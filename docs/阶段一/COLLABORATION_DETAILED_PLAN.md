@@ -1,25 +1,153 @@
 # 阶段一：协作层（在线编辑）详细迁移计划
 
-## 背景：当前协作链路的问题
+## 为什么 google-docs-crdt 的协作不能用
 
-迁移前项目同时使用 Socket.IO（文本变更广播）和 Yjs WebSocket（CRDT 同步 + awareness）双通道。经分析，Yjs WebSocket 通道存在以下问题，导致 CRDT 同步实际未生效，实时协作依赖 Socket.IO 广播：
+通过源码分析，google-docs-crdt 的 WebSocket 连接有 **3 层断裂**，任何一层都足以导致协作失败：
 
-### 问题 1：后端路径精确匹配导致连接被拒
+### 断裂 1：端口不匹配
 
-服务端 upgrade 处理使用 `pathname === '/yjs'` 精确匹配，而客户端连接的是 `ws://localhost:3001/yjs/<docId>`，pathname 为 `/yjs/<docId>`，精确匹配不通过 → Yjs WebSocket 连接被拒。
+```
+服务端默认端口:  3000  (server.ts 第 27 行: `const PORT = ... || 3000`)
+客户端连接端口:  4444  (collaboration.ts 第 21 行: `:4444` 硬编码)
+Vite 代理目标:   4444  (vite.config.ts 第 11 行: `target: 'http://localhost:4444'`)
+```
 
-### 问题 2：开发模式直连后端绕过 Vite 代理
+**结果**：客户端连 `ws://localhost:4444`，但服务端在 `3000` 上监听 → WebSocket 连接被拒绝 → CRDT 同步完全不工作。
 
-客户端在 dev 模式下直连后端端口，绕过 Vite 代理。这要求开发者手动对齐端口，且生产模式下若前后端不同源则连接失败。
+必须手动 `PORT=4444 npm run dev` 启动服务端才能工作，但 README 没有明确说明这一点。
+
+### 断裂 2：WebSocket 路径不匹配
+
+即使端口对齐了，路径也对不上：
+
+```
+客户端连接 URL:  ws://localhost:4444/<docName>
+                  ↑ 没有 /yjs 前缀，直接是文档名
+
+Vite 代理规则:   只代理 /ws 和 /api 路径
+                  → ws://localhost:4444/my-doc 不匹配 /ws
+                  → Vite 不代理，连接到 Vite 自身 → 失败
+
+服务端 upgrade:  无路径过滤！
+                  server.ts 第 146-149 行:
+                  server.on('upgrade', ...) → wss.handleUpgrade(...)
+                  → 所有 WebSocket 升级请求都被接受
+                  → req.url = "/<docName>"
+
+服务端 docName 提取:
+                  第 154-159 行:
+                  url = "/my-doc-room"
+                  不以 /ws/ 开头 → 不 slice
+                  docName = url.slice(1) = "my-doc-room"
+                  → 这个逻辑本身是对的，但前提是连接到达了服务端
+```
+
+**结果**：客户端发出的 WebSocket 请求被 Vite dev server 拦截（不匹配代理规则），永远到达不了后端。
+
+### 断裂 3：Vite 代理的 WebSocket 路径重写问题
+
+Vite 配置：
+```typescript
+proxy: {
+  '/ws': {
+    target: 'ws://localhost:4444',
+    ws: true,
+  }
+}
+```
+
+客户端实际连接 `ws://localhost:3000/my-doc`（假设 Vite 在 3000）。路径 `/my-doc` 不以 `/ws` 开头，Vite 不会代理这个 WebSocket 升级请求。
+
+**而 collaboration.ts 在 dev 模式下直连 4444 端口绕过 Vite**：
+```typescript
+const WS_URL = import.meta.env.DEV
+  ? `${wsProtocol}//${window.location.hostname}:4444`  // 直连 4444
+  : `${wsProtocol}//${window.location.host}`;
+```
+
+这意味着：
+- 开发模式：客户端直连 4444 → 如果服务端不在 4444 → 失败
+- 生产模式：客户端连当前 host → 如果服务端和前端不同源 → 失败
+
+---
+
+## 当前能工作的项目的连接链路
+
+### 实际数据流
+
+```
+客户端 (Editor.jsx)
+  │
+  ├── Socket.IO 连接 ──→ http://localhost:3001 (socket.io)
+  │     ├── emit('join-document', docId)
+  │     ├── on('load-document', content)    ← 初始文档加载
+  │     ├── on('load-document-chunk', ...)  ← 分块加载
+  │     └── emit('send-changes', delta)     ← 文本变更广播
+  │        → server 广播给同房间其他客户端
+  │
+  └── Yjs WebSocket ──→ ws://localhost:3001/yjs/<docId>
+        ├── CRDT update 双向同步
+        └── awareness 协议（光标、用户状态）
+
+服务端 (index.js, 端口 3001)
+  │
+  ├── Express + Socket.IO (端口 3001)
+  │     ├── /health
+  │     ├── socket.on('join-document')  → 加入房间 + 发送初始内容
+  │     ├── socket.on('send-changes')   → 广播给同房间其他客户端
+  │     └── socket.on('save-document')  → 保存到内存
+  │
+  └── Yjs WebSocket (同端口 3001, 路径 /yjs)
+        ├── server.on('upgrade') → 检查 pathname === '/yjs'
+        ├── wss.handleUpgrade()
+        └── setupWSConnection(ws, req)
+              → docName = req.url.slice(1).split('?')[0]
+              → req.url = "/<docId>" (因为 upgrade 时 path 已被剥离了 /yjs)
+```
+
+### 关键：为什么当前项目的 Yjs WebSocket 能工作
+
+服务端 upgrade 处理：
+```javascript
+server.on('upgrade', (request, socket, head) => {
+  const pathname = new URL(request.url, 'http://x').pathname;
+  if (pathname === '/yjs') {                    // ← 精确匹配 /yjs
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  }
+});
+```
+
+客户端连接：
+```javascript
+const YJS_URL = 'ws://localhost:3001/yjs';       // ← URL 中包含 /yjs
+const provider = new WebsocketProvider(YJS_URL, docId, ydoc);
+// WebsocketProvider 内部 URL = YJS_URL + '/' + docId
+// 最终连接: ws://localhost:3001/yjs/<docId>
+```
+
+**但是！** 服务端 `pathname === '/yjs'` 是精确匹配，而客户端连接的是 `ws://localhost:3001/yjs/<docId>`，pathname 应该是 `/yjs/<docId>`，不等于 `/yjs'`。
+
+让我验证这个矛盾——实际上能工作是因为 **客户端直连 3001 端口，没有经过 Vite 代理**。但 `pathname === '/yjs'` 精确匹配应该会失败...
+
+实际上，当客户端直连 `ws://localhost:3001/yjs/<docId>` 时：
+- `request.url` = `/yjs/<docId>`
+- `pathname` = `/yjs/<docId>`
+- `pathname === '/yjs'` → **false** → 不处理！
+
+这意味着 **Yjs WebSocket 在当前项目中其实也没有正确连接**！我们之前验证的多人协作实际上是靠 **Socket.IO 的 send-changes/receive-changes 在工作**，而不是 Yjs CRDT 同步。
+
+但是之前测试时客户端的 `receive-changes` 确实收到了... 那是因为 Socket.IO 在做广播。而 Yjs WebSocket 的 awareness（光标、用户列表）可能没工作，或者靠 BroadcastChannel（同浏览器跨标签）在工作。
 
 ### 验证结论
 
-迁移前的实时同步实际上是：
+当前项目的实时同步实际上是：
 - **文本变更**：Socket.IO `send-changes` → `receive-changes`（工作正常）
-- **CRDT 同步**：Yjs WebSocket 连接失败（pathname 精确匹配不通过）
+- **CRDT 同步**：Yjs WebSocket 连接 **可能失败**（pathname 精确匹配不通过）
 - **光标/awareness**：可能靠 BroadcastChannel（同浏览器跨标签同步，不跨设备）
 
-迁移到 TipTap 后，必须重新设计连接链路，确保 Yjs WebSocket 正常工作。
+这意味着迁移到 TipTap 后，**不能直接沿用任何一方的 WebSocket 配置**，必须重新设计连接链路。
 
 ---
 
@@ -97,17 +225,17 @@ Vite Dev Server (端口 5173)
   └── CRDT 同步 + awareness
 ```
 
-### 目标连接链路参数
+### 关键差异对照
 
-| 对比项 | 目标设计 |
-|---|---|
-| 客户端 WS URL | `ws://localhost:5173/yjs` (dev，通过 Vite 代理) / `ws://<host>/yjs` (prod) |
-| Vite WS 代理 | `/yjs` → 3001 |
-| 后端端口 | 3001 |
-| 后端路径过滤 | `pathname.startsWith('/yjs')` (前缀匹配) |
-| docName 提取 | 手动剥离 `/yjs/` 前缀 |
-| 文本同步通道 | **只用 Yjs WS** |
-| 光标/awareness | Yjs awareness (通过 WebSocket，跨设备) |
+| 对比项 | 当前项目 (旧版) | google-docs-crdt (有 bug) | NexaDoc (目标) |
+|---|---|---|---|
+| 客户端 WS URL | `ws://localhost:3001/yjs` (直连后端) | dev: `ws://localhost:4444` (直连，无 /yjs) | `ws://localhost:5173/yjs` (通过 Vite 代理) |
+| Vite WS 代理 | 无 | `/ws` → 4444 (但客户端不经过 Vite) | `/yjs` → 3001 |
+| 后端端口 | 3001 | 默认 3000，需要手动设 4444 | 3001 |
+| 后端路径过滤 | `pathname === '/yjs'` (精确匹配，有 bug) | 无过滤 (所有 upgrade 都接受) | `pathname.startsWith('/yjs')` (前缀匹配) |
+| docName 提取 | `req.url.slice(1)` (假设 req.url = `/<docId>`) | 手动剥离 `/ws/` 前缀 | 手动剥离 `/yjs/` 前缀 |
+| 文本同步通道 | Socket.IO (实际工作) + Yjs WS (可能不工作) | Yjs WS (端口不匹配，不工作) | **只用 Yjs WS** (必须确保工作) |
+| 光标/awareness | Yjs awareness (可能靠 BroadcastChannel) | Yjs awareness (不工作) | Yjs awareness (通过 WebSocket，跨设备) |
 
 ---
 
@@ -222,9 +350,9 @@ server.listen(PORT, () => {
 })
 ```
 
-关键变更说明：
+关键变更对比：
 
-**迁移前（有 bug）**:
+**原项目 (有 bug)**:
 ```javascript
 // 精确匹配——pathname 是 '/yjs/<docId>' 不等于 '/yjs' → 失败
 if (pathname === '/yjs') { ... }
@@ -234,7 +362,20 @@ if (pathname === '/yjs') { ... }
 wss.on('connection', setupWSConnection)  // 直接传递，不提取 docName
 ```
 
-**迁移后（目标，修复）**:
+**google-docs-crdt (有 bug)**:
+```typescript
+// 无路径过滤——所有 upgrade 都处理
+server.on('upgrade', (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request)
+  })
+})
+
+// docName 提取正确，但前提是连接到达了服务端（端口不匹配导致连不上）
+const docName = url.slice(1) || 'default'
+```
+
+**NexaDoc (目标，修复)**:
 ```typescript
 // 前缀匹配——'/yjs/<docId>' startsWith '/yjs' → true → 处理
 if (pathname.startsWith('/yjs')) { ... }
@@ -443,7 +584,7 @@ useEffect(() => {
 | 版本 | client API | server `setupWSConnection` | `docName` 提取 |
 |---|---|---|---|
 | v1.5.0 (当前 server) | `new WebsocketProvider(url, room, doc)` | `req.url.slice(1).split('?')[0]` | 默认从 req.url 提取 |
-| v2.0.4 | `new WebsocketProvider(url, room, doc)` | 同上 | 同上 |
+| v2.0.4 (google-docs-crdt) | `new WebsocketProvider(url, room, doc)` | 同上 | 同上 |
 | v3.0.0 (当前 client) | `new WebsocketProvider(url, room, doc)` | 同上 | 同上 |
 
 三个版本的 `WebsocketProvider` 构造函数签名完全相同：`(serverUrl, roomname, doc, opts)`。
@@ -457,7 +598,8 @@ useEffect(() => {
 **选择: 统一使用 v2.0.4**
 
 理由：
-- v2 与 TipTap 生态兼容性已验证
+- v2 是 google-docs-crdt 验证过的版本（虽然它的端口配置有 bug，但 y-websocket 本身没问题）
+- v2 的 TipTap 兼容性已验证（google-docs-crdt 用 TipTap + y-websocket v2）
 - v3 的 `ObservableV2` 变化可能导致与某些扩展的不兼容
 - 前后端统一版本，避免协议差异
 
