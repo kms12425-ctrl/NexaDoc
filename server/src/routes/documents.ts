@@ -2,15 +2,17 @@ import { Router, Request, Response } from 'express'
 import { ObjectId } from 'mongodb'
 import { getDB } from '../db'
 import { AuthRequest } from '../auth'
-import { getAbilities, Role } from '../rbac'
-import type { DocumentDoc, DocumentAccessDoc } from '../types'
+import { getAbilities, resolveAccess, Role } from '../rbac'
+import { generateDocId } from '../docId'
+import type { DocumentAccessDoc, DocumentDoc } from '../types'
 
 const router = Router()
 
 /**
  * GET /api/documents — 列出当前用户的文档（排除软删除）
  */
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) =>
+{
   const db = getDB()
   const userId = new ObjectId(req.user!.id)
 
@@ -46,13 +48,13 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
   const sharedDocs = docIds.length > 0
     ? await db
-        .collection<DocumentDoc>('documents')
-        .find(
-          { _id: { $in: docIds }, deletedAt: null },
-          { projection: { crdtState: 0 } }
-        )
-        .sort({ updatedAt: -1 })
-        .toArray()
+      .collection<DocumentDoc>('documents')
+      .find(
+        { _id: { $in: docIds }, deletedAt: null },
+        { projection: { crdtState: 0 } }
+      )
+      .sort({ updatedAt: -1 })
+      .toArray()
     : []
 
   const sharedResult = sharedDocs.map((d) => ({
@@ -70,10 +72,12 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 /**
  * POST /api/documents — 创建文档，ownerUserId 设为当前用户
  */
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) =>
+{
   const db = getDB()
   const name = (req.body.name || 'Untitled Document').trim()
-  const docId = name.replace(/\s+/g, '-') + '-' + Date.now()
+  // docId 必须 ASCII 安全（要拼进 WebSocket 路径），见 docId.ts 的说明
+  const docId = generateDocId(name)
   const now = new Date()
 
   const result = await db.collection<DocumentDoc>('documents').insertOne({
@@ -100,53 +104,36 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 /**
  * GET /api/documents/:docId/metadata — 获取文档元数据 + 权限
  */
-router.get('/:docId/metadata', async (req: AuthRequest, res: Response) => {
-  const db = getDB()
-  const doc = await db.collection<DocumentDoc>('documents').findOne(
-    { docId: req.params.docId },
-    { projection: { crdtState: 0 } }
-  )
-  if (!doc) {
+router.get('/:docId/metadata', async (req: AuthRequest, res: Response) =>
+{
+  const access = await resolveAccess(req.params.docId as string, req.user!.id)
+  if (!access) {
     res.status(404).json({ error: 'Document not found' })
     return
   }
 
-  const isOwner = doc.ownerUserId?.toString() === req.user!.id
-  const access = await db.collection<DocumentAccessDoc>('document_access').findOne({
-    documentId: doc._id!,
-    userId: new ObjectId(req.user!.id),
-  })
-  // 未被显式邀请的登录用户通过链接访问时，默认获得 EDITOR 权限（Google Docs 风格）
-  const role: Role = isOwner ? Role.OWNER : (access?.role as Role) || Role.EDITOR
-
+  const { doc, abilities } = access
   res.json({
     id: doc.docId,
     name: doc.title,
     createdAt: doc.createdAt.getTime(),
     updatedAt: doc.updatedAt.getTime(),
-    abilities: getAbilities(role),
+    abilities,
   })
 })
 
 /**
  * PATCH /api/documents/:docId/metadata — 更新标题（需 canEdit）
  */
-router.patch('/:docId/metadata', async (req: AuthRequest, res: Response) => {
+router.patch('/:docId/metadata', async (req: AuthRequest, res: Response) =>
+{
   const db = getDB()
-  const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
-  if (!doc) {
+  const access = await resolveAccess(req.params.docId as string, req.user!.id)
+  if (!access) {
     res.status(404).json({ error: 'Document not found' })
     return
   }
-
-  const isOwner = doc.ownerUserId?.toString() === req.user!.id
-  const access = await db.collection<DocumentAccessDoc>('document_access').findOne({
-    documentId: doc._id!,
-    userId: new ObjectId(req.user!.id),
-  })
-  const role: Role = isOwner ? Role.OWNER : (access?.role as Role) || Role.EDITOR
-  const abilities = getAbilities(role)
-  if (!abilities.canEdit) {
+  if (!access.abilities.canEdit) {
     res.status(403).json({ error: 'Insufficient permissions' })
     return
   }
@@ -161,7 +148,8 @@ router.patch('/:docId/metadata', async (req: AuthRequest, res: Response) => {
 /**
  * DELETE /api/documents/:docId — 软删除（需 canDelete）
  */
-router.delete('/:docId', async (req: AuthRequest, res: Response) => {
+router.delete('/:docId', async (req: AuthRequest, res: Response) =>
+{
   const db = getDB()
   const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
   if (!doc) {

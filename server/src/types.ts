@@ -19,7 +19,8 @@ export const LinkReach = {
 export type LinkReach = typeof LinkReach[keyof typeof LinkReach]
 
 // ── 用户文档 ──
-export interface UserDoc {
+export interface UserDoc
+{
   _id?: ObjectId
   username: string
   email?: string
@@ -31,7 +32,8 @@ export interface UserDoc {
 }
 
 // ── 文档 ──
-export interface DocumentDoc {
+export interface DocumentDoc
+{
   _id?: ObjectId
   docId: string               // Yjs room name，用作 WebSocket 路由 key
   title: string
@@ -46,22 +48,27 @@ export interface DocumentDoc {
 }
 
 // ── 文档访问权限 ──
-export interface DocumentAccessDoc {
+export interface DocumentAccessDoc
+{
   _id?: ObjectId
   documentId: ObjectId
   userId: ObjectId
   role: Role
   invitedAt: Date
   acceptedAt: Date | null
+  invitedBy?: ObjectId      // 邀请人（owner/admin）
 }
 
 // ── 版本快照 ──
-export interface SnapshotDoc {
+export interface SnapshotDoc
+{
   _id?: ObjectId
   documentId: ObjectId
   name: string
   crdtState: Buffer
   crdtStateSize: number
+  /** TipTap 正文的 JSON（stringify 后）——恢复时靠它做删除+插入，见 routes/snapshots.ts */
+  contentJson?: string
   authorUserId: ObjectId | null
   authorName: string
   preview: string
@@ -69,7 +76,8 @@ export interface SnapshotDoc {
 }
 
 // ── 评论 ──
-export interface CommentDoc {
+export interface CommentDoc
+{
   _id?: ObjectId
   documentId: ObjectId
   userId: ObjectId

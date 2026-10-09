@@ -11,7 +11,8 @@ const router = Router()
 /**
  * GET /api/documents/:docId/access — 列出协作者
  */
-router.get('/:docId/access', async (req: AuthRequest, res: any) => {
+router.get('/:docId/access', async (req: AuthRequest, res: any) =>
+{
   const db = getDB()
   const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
   if (!doc) {
@@ -65,7 +66,8 @@ router.get('/:docId/access', async (req: AuthRequest, res: any) => {
 /**
  * POST /api/documents/:docId/share — 邀请协作者
  */
-router.post('/:docId/share', async (req: AuthRequest, res: any) => {
+router.post('/:docId/share', async (req: AuthRequest, res: any) =>
+{
   const db = getDB()
   const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
   if (!doc) {
@@ -99,6 +101,7 @@ router.post('/:docId/share', async (req: AuthRequest, res: any) => {
         role: targetRole,
         invitedAt: new Date(),
         acceptedAt: new Date(),
+        invitedBy: new ObjectId(req.user!.id),
       },
     },
     { upsert: true }
@@ -119,7 +122,8 @@ router.post('/:docId/share', async (req: AuthRequest, res: any) => {
 /**
  * DELETE /api/documents/:docId/access/:userId — 移除协作者
  */
-router.delete('/:docId/access/:userId', async (req: AuthRequest, res: any) => {
+router.delete('/:docId/access/:userId', async (req: AuthRequest, res: any) =>
+{
   const db = getDB()
   const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
   if (!doc) {
