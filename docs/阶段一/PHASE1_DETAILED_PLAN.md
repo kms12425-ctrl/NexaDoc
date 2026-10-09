@@ -39,28 +39,48 @@
 
 ---
 
-## 架构预留设计
+## 架构设计模式与预留点
 
-阶段一在类型定义和服务端骨架中**预留衔接点**，为后续阶段的持久化、用户系统、权限系统做准备。本阶段不实现这些功能，但类型层面提前就绪。
+阶段一在类型定义和服务端骨架中**预留衔接点**，后续阶段按需启用。以下模式在阶段一仅做类型/接口预留，不填充真实逻辑。
 
-1. **能力契约模式**：后端在文档序列化时返回 `abilities` 布尔值（`can_edit`, `can_delete`, `can_share`, `can_comment`, `can_view_version_history` 等），前端直接消费决定 UI 显示/隐藏。权限逻辑集中在后端，前端只做展示。阶段一在 `types/index.ts` 中预留 `DocumentAbilities` 接口骨架，所有能力默认 `true`（单用户无权限控制）。
+### 设计 1：`get_abilities()` 契约模式
 
-2. **文档内容与元数据分离**：二进制 CRDT state 可能很大（MB 级），应与元数据分离存储。阶段一在 `DocumentMeta` 类型中预留 `parentId`（文档树）和 `deletedAt`（软删除）字段，后续接入 MongoDB 时 `documents` 集合存元数据，`crdtState` 可独立存储。
+**思路**：每个模型（Document、User 等）的序列化方法返回一个 `abilities` 字段——约 30 个布尔值，描述当前用户对该对象的能力（`can_edit`, `can_delete`, `can_share`, `can_comment`, `can_view_version_history` 等）。前端直接消费这些布尔值决定 UI 显示/隐藏，**不需要前端自己判断权限**。
 
-3. **协作连接生命周期管理**：阶段一继续用裸 y-websocket（无认证无权限），但在 `server.ts` 的 upgrade 处理处预留注释钩子，标注未来在此处插入 token 验证和权限检查。
+**为什么这样设计**：权限逻辑集中在后端，前端只做展示。当权限规则变化时只改后端，前端 UI 自动跟随。这避免了"前端硬编码角色判断、后端规则一变前端就跟不上"的常见反模式。
 
-4. **软删除 + 文档树结构**：`DocumentMeta` 类型预留 `deletedAt` 和 `parentId` 字段，阶段一不实现相关功能，后续阶段接入 MongoDB 时直接启用。
+**阶段一落地**：在 `types/index.ts` 中**预留 `DocumentAbilities` 接口骨架**（字段留空或注释 TODO），阶段一不填充真实值，所有能力默认 `true`（单用户无权限控制）。阶段三实现用户认证、阶段四实现权限系统时，由后端在文档序列化时返回真实能力值，前端 UI 绑定到这些布尔值。
+
+### 设计 2：文档内容与元数据分离
+
+**思路**：CRDT 二进制内容存对象存储（带版本化），数据库只存文档**元数据**（标题、树结构、RBAC、时间戳）。两者通过 `doc_id` 关联。
+
+**为什么这样设计**：二进制 CRDT state 可能很大（MB 级），放关系数据库会拖慢查询和索引。元数据表保持轻量，可以建索引、做 JOIN、分页查询；二进制内容走对象存储，天然支持版本化和大文件。
+
+**阶段一落地**：本项目阶段二用 MongoDB，`documents` 集合存元数据 + `crdtState`（Buffer）。阶段一在 `DocumentMeta` 类型中**预留 `parentId`（文档树）和 `deletedAt`（软删除）字段**，为后续文档树和回收站功能做准备。当 CRDT 增长到一定规模或引入版本历史时，可以将 `crdtState` 迁移到 GridFS 或外部对象存储，`documents` 集合只保留元数据——这个分离点在类型设计阶段就预留好。
+
+### 设计 3：协作连接生命周期管理
+
+**思路**：用增强型 Yjs 服务器替代裸 y-websocket，在 `onConnect` 钩子验证用户 token + 文档权限，在 `onDisconnect` 清理资源，权限变更时调用 `reset-connections` 强制重连以应用新权限。
+
+**阶段一落地**：本项目阶段一继续用裸 y-websocket（无认证无权限），但在 `server.ts` 的 upgrade 处理处**预留注释钩子**，标注未来在此处插入 token 验证和权限检查。阶段三/四接入用户系统时，可以平滑升级到增强型服务器或在 upgrade handler 中加中间件，而不需要重新设计连接链路。
+
+### 设计 4：软删除 + 文档树结构
+
+**思路**：文档删除是软删除（设置 `deleted_at` 时间戳），可在回收站恢复。文档有 `parent_id` 形成树结构，子文档继承父文档的权限且只能收窄。
+
+**阶段一落地**：`DocumentMeta` 类型预留 `deletedAt` 和 `parentId` 字段，阶段一不实现相关功能（localStorage 的文档管理保持原样），但类型层面已经就绪，后续阶段接入 MongoDB 时可以直接启用。
 
 ### 后续阶段路线图
 
-| 阶段 | 目标 |
-|---|---|
-| 阶段一（本计划） | TS + TipTap + 纯 Yjs WebSocket |
-| 阶段二 | MongoDB 持久化 + 版本历史 |
-| 阶段三 | 用户注册登录 + 文档归属 |
-| 阶段四 | RBAC 权限系统 + 分享邀请 |
-| 阶段五 | 评论系统 |
-| 阶段六 | 文档树 + 软删除回收站 + 收藏夹 |
+| 阶段 | 目标 | 核心能力 |
+|---|---|---|
+| 阶段一（本计划） | TS + TipTap + 纯 Yjs WebSocket | 基础编辑 + 协作 |
+| 阶段二 | MongoDB 持久化 + 版本历史 | documents/snapshots 集合 |
+| 阶段三 | 用户注册登录 + 文档归属 | users 集合 + onConnect 认证 |
+| 阶段四 | RBAC 权限系统 + 分享邀请 | `get_abilities()` 契约 + collaborations 集合 |
+| 阶段五 | 评论系统 | comments 集合 |
+| 阶段六 | 文档树 + 软删除回收站 + 收藏夹 | parentId + deletedAt 字段启用 |
 
 ---
 
@@ -150,7 +170,7 @@
 
 变更说明：
 - **移除 `socket.io`** — 不再需要双通道
-- **`y-websocket` 升级到 `^2.0.4`** — TipTap 生态兼容
+- **`y-websocket` 升级到 `^2.0.4`** — 与 google-docs-crdt 统一，TipTap 生态兼容
 - **新增 devDependencies** — TypeScript 工具链 + 类型声明
 - **scripts 变更** — `dev` 用 ts-node 直接运行 TS，`build` 用 tsc 编译，`start` 运行编译后代码
 - **`main` 指向 `dist/server.js`**
@@ -241,7 +261,7 @@ server.on('upgrade', (request, socket, head) => {
 
 > **架构预留 — 协作连接生命周期管理**：
 >
-> 阶段一无认证无权限，但 upgrade handler 是未来插入认证的衔接点：
+> 后续阶段可用增强型 Yjs 服务器替代裸 y-websocket，在 `onConnect` 钩子验证用户 token + 文档权限。本项目阶段一无认证无权限，但 upgrade handler 是未来插入认证的衔接点：
 >
 > ```typescript
 > // ── 阶段三/四预留：在此处插入认证钩子 ──
@@ -259,7 +279,7 @@ server.on('upgrade', (request, socket, head) => {
 > })
 > ```
 >
-> 此外，阶段四实现权限系统时，可以在服务端维护一个 `docId → Set<ws>` 映射，权限变更时关闭对应文档的所有 WebSocket 连接，客户端 WebsocketProvider 会自动重连并重新走认证流程。阶段一不需要实现这个机制，但提前了解这个模式有助于后续架构决策。
+> 此外，docs 在权限变更时调用 `reset-connections` 强制客户端重连以应用新权限。阶段四实现权限系统时，可以在服务端维护一个 `docId → Set<ws>` 映射，权限变更时关闭对应文档的所有 WebSocket 连接，客户端 WebsocketProvider 会自动重连并重新走认证流程。阶段一不需要实现这个机制，但了解这个模式有助于后续架构决策。
 
 #### 1.3.4 移除内存文档存储
 
@@ -458,7 +478,7 @@ npm run dev             # 启动：ts-node src/server.ts → http://localhost:30
 - **降级 React**: `^19.2.4` → `^18.3.1`（react + react-dom）
 - **降级 react-router-dom**: `^7.13.2` → `^6.28.0`（React 18 兼容）
 - **降级 y-websocket**: `^3.0.0` → `^2.0.4`（与服务端统一）
-- **降级 lucide-react**: `^1.7.0` → `^0.475.0`（v1.x 的 lucide-react 包名结构不同）
+- **降级 lucide-react**: `^1.7.0` → `^0.475.0`（与 google-docs-crdt 统一，v1.x 的 lucide-react 包名结构不同）
 - **降级 Vite**: 保留 `^6.0.7`（已在上次验证中确认可用）
 - **新增 devDependencies**: TypeScript 工具链 + 类型声明
 - **新增 `@types/file-saver`** — file-saver 没有自带类型声明
@@ -616,7 +636,7 @@ export interface DocumentMeta {
   name: string
   createdAt: number
   updatedAt: number
-  // ── 预留字段（为后续阶段准备）──
+  // ── 预留字段（后续阶段启用）──
   parentId?: string | null         // 文档树结构：父文档 ID（阶段六启用）
   deletedAt?: number | null        // 软删除时间戳（阶段六启用）
   abilities?: DocumentAbilities    // 当前用户对该文档的能力契约（阶段四启用）
@@ -632,7 +652,7 @@ export interface RemoteUserState {
   docTitle?: string
 }
 
-// ── 预留：文档能力契约（后端返回能力布尔值，前端消费）──
+// ── 预留：文档能力契约（后续阶段实现 RBAC 时启用）──
 // 阶段四实现 RBAC 权限系统时，后端在文档序列化时返回这些布尔值，
 // 前端 UI 直接消费决定按钮/操作的显示与隐藏。
 // 阶段一所有能力默认 true（单用户无权限控制）。
@@ -780,7 +800,7 @@ export function createYjs(
 - **新增 `destroy()` 方法** — 统一清理资源，替代 Editor.jsx 中分散的 cleanup 逻辑
 - **customUser 可选参数** — 后续用户认证实现后可以传入真实用户信息
 
-> **架构预留**：awareness 中除了 `name`/`color` 还可携带 `user_id`，服务端在连接建立时可从 awareness 或连接参数中提取用户身份做权限校验。本项目的 `customUser` 参数就是为此预留——阶段三实现登录后，`createYjs(docId, { id: loggedInUser.id, name: loggedInUser.name, color: loggedInUser.avatarColor })` 即可无缝接入，awareness 协议和 CollabSession 接口不需要改动。
+> **架构预留**：awareness 中除了 `name`/`color` 还可以携带 `user_id`，服务端在 `onConnect` 时从 awareness 或连接参数中提取用户身份做权限校验。本项目的 `customUser` 参数就是为此预留——阶段三实现登录后，`createYjs(docId, { id: loggedInUser.id, name: loggedInUser.name, color: loggedInUser.avatarColor })` 即可无缝接入，awareness 协议和 CollabSession 接口不需要改动。
 
 ### 4.2 `client/src/services/storage.js` → `storage.ts`
 
@@ -1250,7 +1270,7 @@ useEffect(() => {
 - 添加了 TypeScript 类型注解
 - 从 `session.provider.awareness` 获取 awareness 实例（原来是 `provider.awareness`）
 
-> **架构预留**：前端组件不自己判断权限，而是消费后端返回的 `abilities` 对象。本项目阶段一无权限控制，但 `Editor.tsx` 中的操作按钮（PDF/DOCX 导出、编辑/查看切换、标题编辑等）可以预留 `disabled={!abilities?.canEdit}` 这样的绑定点。阶段四实现权限系统后，这些按钮会自动根据后端返回的能力值启用/禁用，不需要改组件逻辑。阶段一可以先不做这个绑定（所有按钮始终可用）。
+> **架构预留**：前端组件不自己判断权限，而是消费后端返回的 `abilities` 对象。本项目阶段一无权限控制，但 `Editor.tsx` 中的操作按钮（PDF/DOCX 导出、编辑/查看切换、标题编辑等）可以预留 `disabled={!abilities?.canEdit}` 这样的绑定点。阶段四实现权限系统后，这些按钮会自动根据后端返回的能力值启用/禁用，不需要改组件逻辑。阶段一可以先不做这个绑定（所有按钮始终可用），但了解这个模式有助于后续设计。
 
 #### 5.3.6 移除 Socket.IO 代码
 
