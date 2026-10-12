@@ -2,7 +2,7 @@
 
 > **目标**：`docker compose up --build` 一条命令拉起 MongoDB + 应用，浏览器直接访问编辑器；`/health` 返回 200。
 > **范围**：新增 Dockerfile / compose.yml / .dockerignore / `.env.example`，并修复阻断容器构建的既有问题。
-> **原则**：所有新增文件落在 `NexaDoc/` 内；**不改动对外 API 路径与开发工作流**（`npm run dev` + 5173 仍然可用）。
+> **原则**：所有新增文件落在项目根目录内；**不改动对外 API 路径与开发工作流**（`npm run dev` + 5173 仍然可用）。
 
 ---
 
@@ -79,8 +79,8 @@ graph LR
 
 - 宿主端口走变量：`APP_PORT`（默认 `3001`，与计划文档验收一致）。
   ⚠️ **本机 3001 目前被 `npm run dev` 占用**，验证时要么先停 dev，要么 `APP_PORT=8080 docker compose up`。
-- **mongo 不对外发布端口**（默认）。原因：本机已有 dev 容器 `nexadoc-mongo` 绑定 27017，发布即冲突；调试需要时用 `docker compose port` 或临时加 `-p`。
-- 镜像/项目名：`NexaDoc`；compose `name: NexaDoc`；数据卷 `mongo-data`。
+- **mongo 不对外发布端口**（默认）。原因：本机已有 dev 容器绑定 27017，发布即冲突；调试需要时用 `docker compose port` 或临时加 `-p`。
+- 镜像/项目名：`nexadoc`；compose `name: nexadoc`；数据卷 `mongo-data`。
 
 ---
 
@@ -283,7 +283,7 @@ CMD ["node", "dist/server.js"]
 ### 3.4 `compose.yml`（v2 根目录）
 
 ```yaml
-name: NexaDoc
+name: nexadoc
 services:
   mongo:
     image: mongo:7
@@ -296,7 +296,7 @@ services:
       retries: 5
   app:
     build: { context: ., target: runtime }
-    image: NexaDoc:dev
+    image: nexadoc:dev
     restart: unless-stopped
     ports: ["${APP_PORT:-3001}:3001"]
     environment:
@@ -376,7 +376,7 @@ docker compose up --build # → http://localhost:3001
 | **0** | P0-1～P0-6：修 Docker 代理 + 拉基础镜像；`npm ci`（server/client）；构建脚本与类型修复；测试隔离修复 | 依赖就绪、三条绿线 | `build`/`typecheck`/`test`（server 115、client 78）全 0；`dist` 无 `*.test.js`；本地 dev 库不再被清空 |
 | **1** | P0-3 客户端同源化 + P0-4 服务端静态托管 | 代码可部署 | `npm run dev` 双端仍正常（5173 登录/编辑/同步无回归）；`npm test`（两处）通过 |
 | **2** | 新增 `.dockerignore`、`.env.example` | 构建上下文干净 | `docker compose config` 无报错 |
-| **3** | 新增根 `Dockerfile` | 可构建镜像 | `docker build -t NexaDoc:dev .`（本地先不加 compose） |
+| **3** | 新增根 `Dockerfile` | 可构建镜像 | `docker build -t nexadoc:dev .`（本地先不加 compose） |
 | **4** | 新增 `compose.yml` | 一键启动 | `docker compose up --build -d` → `docker compose ps` 两服务 healthy |
 | **5** | 端到端冒烟（见 §6） | 验收证据 | `/health` 200；浏览器 3001 完成注册→建文档→双窗口同步 |
 | **6**（可选） | `compose.e2e.yml`、`server/Dockerfile`、`client/Dockerfile`、README Quick Start | 形态对齐 | `docker compose -f compose.yml -f compose.e2e.yml run e2e` |
@@ -392,7 +392,7 @@ docker compose up --build # → http://localhost:3001
 | `server npm test` | **115 passed / 9 files**，且本地 dev 库哨兵用户存活（隔离生效） |
 | `client npm test` | **78 passed / 8 files**（修掉 `e2e/**` 被 Vitest 误收集后） |
 | Docker 镜像 | `docker info` → `http.docker.internal:3128`；已缓存 `node:22-alpine`、`nginx:alpine`；容器内 npm 可达 |
-| 开发环境 | 已恢复：`nexadoc-mongo` 运行中、`:3001` 健康、`:5173` 可访问（系统代理已还原为开启） |
+| 开发环境 | 已恢复：`collab-mongo` 运行中、`:3001` 健康、`:5173` 可访问（系统代理已还原为开启） |
 
 ### Step 1 完成记录（2026-09-23）
 
@@ -421,7 +421,7 @@ docker compose up --build # → http://localhost:3001
 
 | 项 | 结果 |
 |---|---|
-| 构建 | 首次构建成功；镜像 `NexaDoc:dev` = **282 MB**（runtime 仅含生产依赖 + dist） |
+| 构建 | 首次构建成功；镜像 `nexadoc:dev` = **282 MB**（runtime 仅含生产依赖 + dist） |
 | 容器状态 | `app` Up (healthy)、`mongo` Up (healthy)；`0.0.0.0:3001->3001` |
 | 路由 | `/health` 200 JSON；`/`、`/nonexistent-route` 200 HTML；`/api/documents` 401；`/assets/missing.js` 404 |
 | 浏览器端到端 | 注册 → 建文档 →（标题经 Yjs 同步）`Connected` → 输入 29 字符 → **删除 IndexedDB 后刷新，内容从容器内 MongoDB 恢复** |
@@ -432,7 +432,7 @@ docker compose up --build # → http://localhost:3001
 
 1. **`# syntax=docker/dockerfile:1` 会额外拉 `docker/dockerfile:1` frontend 镜像**，在代理受限环境直接失败 → 已移除该指令（本 Dockerfile 未用 BuildKit 专有语法）。
 2. **Docker Desktop 每次重启都会重新继承 Windows 系统代理**（`127.0.0.1:7897` 在 WSL2 内不可达）→ 构建前需先按 P0-5 关闭系统代理并重启引擎；构建完再还原 `ProxyEnable=1`。
-3. **`docker compose` 的构建上下文不含任何"被忽略目录"**——本次失败实为构建上下文路径配置问题，与 `.dockerignore` 无关（已用关闭 ignore 的对照实验排除）。
+3. **`docker compose` 的构建上下文不含任何"被忽略目录"**——本次失败实为项目目录被移动（`references/` → `thirdparty/`）导致上下文只剩新建文件，与 `.dockerignore` 无关（已用关闭 ignore 的对照实验排除）。
 4. **优雅退出不彻底**：容器收到 SIGTERM 后打印 `Forced exit after timeout.`（约 10s 才退出）。
    建议后续在 `server.ts` 的 shutdown 中补 `wss.close()` / `notifyWss.close()` 与 Mongo client 关闭，缩短 `docker compose down/up` 的等待时间。
 
@@ -509,8 +509,8 @@ $env:PLAYWRIGHT_BASE_URL="http://localhost:3001"; npx playwright test
 | `docker compose -f compose.split.yml up --build -d` | exit 0；三容器 healthy（`web` 0.0.0.0:**8080**->80） |
 | 路由（经 nginx） | `/` 200 HTML ・ `/health` 200 JSON（反代）・ `/api/documents` **401** ・ `/nonexistent-route` 200 HTML（try_files 回退）・ 缺失资源 404 |
 | **WebSocket 经 nginx** | 注册 → 建文档 → `Connected` → 输入 → **删 IndexedDB 刷新后内容从服务器恢复**（`/yjs` 升级 + `/ws` 通知均通） |
-| 镜像体积 | `NexaDoc-web`（nginx+静态）**96.3MB**；`NexaDoc-server` **279MB**；单镜像 **282MB** |
-| 收尾 | 验证后已 `down -v` 拆除分体栈（独立 project name `NexaDoc-split`，与主栈互不干扰） |
+| 镜像体积 | `nexadoc-web`（nginx+静态）**96.3MB**；`nexadoc-server` **279MB**；单镜像 **282MB** |
+| 收尾 | 验证后已 `down -v` 拆除分体栈（独立 project name `nexadoc-split`，与主栈互不干扰） |
 
 ---
 
@@ -545,7 +545,7 @@ docker compose down -v                # 清空数据
 | 风险 | 症状 | 规避 |
 |---|---|---|
 | Docker 系统代理 | `proxyconnect tcp ... 7897: connection refused`（**已实测**） | P0-5；或 Docker Desktop Manual 代理 `host.docker.internal:7897` |
-| 端口冲突 | 3001 被 `npm run dev` / 27017 被 `nexadoc-mongo` 占用 | `APP_PORT` 可配；mongo 默认不发布宿主端口 |
+| 端口冲突 | 3001 被 `npm run dev` / 27017 被 `collab-mongo` 占用 | `APP_PORT` 可配；mongo 默认不发布宿主端口 |
 | 构建上下文过大 | 上传 `node_modules` 导致 build 很慢 | `.dockerignore` 的 `**/node_modules`、`**/dist` |
 | devDeps 未装 | `npm run build`/`npm test` 直接报 `Cannot find module 'vitest'`（**已实测**） | Step 0 的 `npm ci` |
 | `tsc` 吞测试文件 | dist 混入 `*.test.js`，运行镜像需 devDeps | P0-2 `tsconfig.build.json` |
