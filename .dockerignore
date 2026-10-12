@@ -1,0 +1,28 @@
+# ── 构建上下文排除项（v2 根目录 .dockerignore）──
+# 注意：不要排除 client/public、client/index.html
+
+**/node_modules
+**/dist
+**/coverage
+**/.vite
+
+# 测试产物与 e2e（不进镜像）
+client/e2e
+client/playwright-report
+client/test-results
+
+# 文档 / CI / 元数据
+docs
+.github
+**/*.md
+**/LICENSE
+
+# 本地与本机产物
+**/*.log
+.env
+.env.*
+!.env.example
+
+# VCS
+.git
+.gitignore

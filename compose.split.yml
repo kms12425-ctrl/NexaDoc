@@ -1,0 +1,51 @@
+# 方案 B：静态资源（nginx）与 API/WS（node）分离部署，采用「web + backend」形态
+#
+#   docker compose -f compose.split.yml up --build   →  http://localhost:8080
+#
+# 与 compose.yml（单镜像同源，:3001）等价，只是多了一层 nginx 反代；
+# 独立 project name，避免与主栈的容器/卷/端口互相干扰。
+name: nexadoc-split
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  app:
+    build:
+      context: ./server
+    image: nexadoc-server:dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MONGO_URI: mongodb://mongo:27017
+      DB_NAME: ${DB_NAME:-nexadoc}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      # 浏览器侧的实际来源是 nginx
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:8080}
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./client
+    image: nexadoc-web:dev
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
