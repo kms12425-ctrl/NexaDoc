@@ -1,108 +1,75 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+import { createDocument, registerAndLogin, uniqueUsername, waitForEditorReady, typeInEditor } from './helpers'
 
-const uniqueUsername = () => `e2e-collab-${Date.now()}`
+/** 用户 1：注册 + 新建文档，返回 { 文档 URL, 用户名 } */
+async function createSharedDoc(page: Page): Promise<{ url: string; username: string }>
+{
+    const username = await registerAndLogin(page, uniqueUsername('e2e-collab'))
+    await createDocument(page, `Collab Doc ${Date.now()}`)
+    await waitForEditorReady(page)
+    return { url: page.url(), username }
+}
 
-test.describe('Real-time collaboration', () => {
-  test('two users see each other edits', async ({ browser }) => {
-    // Create two browser contexts (two users)
-    const user1 = await browser.newContext()
-    const user2 = await browser.newContext()
+/** 用户 2：注册后直接打开分享链接（默认链接角色为 EDITOR，可直接编辑），返回用户名 */
+async function joinDoc(page: Page, url: string): Promise<string>
+{
+    const username = await registerAndLogin(page, uniqueUsername('e2e-collab'))
+    await page.goto(url)
+    await waitForEditorReady(page)
+    return username
+}
 
-    const page1 = await user1.newPage()
-    const page2 = await user2.newPage()
+test.describe('Real-time collaboration', () =>
+{
+    test('two users see each other edits', async ({ browser }) =>
+    {
+        const context1 = await browser.newContext()
+        const context2 = await browser.newContext()
+        const page1 = await context1.newPage()
+        const page2 = await context2.newPage()
 
-    // Register user1
-    await page1.goto('/register')
-    await page1.fill('input[placeholder="Choose a username"]', uniqueUsername())
-    await page1.fill('input[placeholder="At least 6 characters"]', 'pass123')
-    await page1.click('button[type="submit"]')
-    await expect(page1).toHaveURL('/')
+        try {
+            const { url } = await createSharedDoc(page1)
+            await joinDoc(page2, url)
 
-    // Create a document as user1
-    await page1.click('text=/new/i')
-    await page1.fill('input[placeholder*="name" i]', 'Collab Test Doc')
-    await page1.click('button:has-text("Create"), button:has-text("OK"), button[type="submit"]')
-    await expect(page1).toHaveURL(/\/document\//, { timeout: 10000 })
+            // 用户 1 输入 → 用户 2 应收到（经 Yjs WebSocket 同步）
+            await typeInEditor(page1, 'Hello from user 1')
+            await expect(page2.locator('.ProseMirror')).toContainText('Hello from user 1', { timeout: 15000 })
 
-    // Get the doc URL
-    const docUrl = page1.url()
+            // 用户 2 继续输入 → 用户 1 应收到
+            await page2.locator('.ProseMirror').click()
+            await page2.keyboard.press('End')
+            await page2.keyboard.press('Enter')
+            await page2.keyboard.type('Hello from user 2')
+            await expect(page1.locator('.ProseMirror')).toContainText('Hello from user 2', { timeout: 15000 })
+        } finally {
+            await context1.close()
+            await context2.close()
+        }
+    })
 
-    // Register user2
-    await page2.goto('/register')
-    await page2.fill('input[placeholder="Choose a username"]', uniqueUsername())
-    await page2.fill('input[placeholder="At least 6 characters"]', 'pass123')
-    await page2.click('button[type="submit"]')
-    await expect(page2).toHaveURL('/')
+    test('remote cursor is visible', async ({ browser }) =>
+    {
+        const context1 = await browser.newContext()
+        const context2 = await browser.newContext()
+        const page1 = await context1.newPage()
+        const page2 = await context2.newPage()
 
-    // User2 opens the same document (via shared link / direct URL)
-    await page2.goto(docUrl)
+        try {
+            const { url } = await createSharedDoc(page1)
+            const peerName = await joinDoc(page2, url)
 
-    // Wait for both editors to be ready
-    await expect(page1.locator('.ProseMirror')).toBeVisible({ timeout: 15000 })
-    await expect(page2.locator('.ProseMirror')).toBeVisible({ timeout: 15000 })
+            // 双方各自把光标放进正文，才可能看到对方的远端光标
+            await typeInEditor(page2, 'user2 was here')
+            await typeInEditor(page1, 'user1 was here')
 
-    // User1 types text
-    await page1.locator('.ProseMirror').click()
-    await page1.keyboard.type('Hello from user 1!')
-
-    // User2 should see the text (with some delay for sync)
-    await expect(page2.locator('.ProseMirror')).toContainText('Hello from user 1', { timeout: 15000 })
-
-    // User2 types text
-    await page2.locator('.ProseMirror').click()
-    await page2.keyboard.press('Enter')
-    await page2.keyboard.type('Hello from user 2!')
-
-    // User1 should see user2's text
-    await expect(page1.locator('.ProseMirror')).toContainText('Hello from user 2', { timeout: 15000 })
-
-    await user1.close()
-    await user2.close()
-  })
-
-  test('remote cursor is visible', async ({ browser }) => {
-    const user1 = await browser.newContext()
-    const user2 = await browser.newContext()
-
-    const page1 = await user1.newPage()
-    const page2 = await user2.newPage()
-
-    // Register both users and open the same doc
-    await page1.goto('/register')
-    await page1.fill('input[placeholder="Choose a username"]', uniqueUsername())
-    await page1.fill('input[placeholder="At least 6 characters"]', 'pass123')
-    await page1.click('button[type="submit"]')
-    await expect(page1).toHaveURL('/')
-
-    await page1.click('text=/new/i')
-    await page1.fill('input[placeholder*="name" i]', 'Cursor Test')
-    await page1.click('button:has-text("Create"), button:has-text("OK"), button[type="submit"]')
-    await expect(page1).toHaveURL(/\/document\//, { timeout: 10000 })
-
-    const docUrl = page1.url()
-
-    await page2.goto('/register')
-    await page2.fill('input[placeholder="Choose a username"]', uniqueUsername())
-    await page2.fill('input[placeholder="At least 6 characters"]', 'pass123')
-    await page2.click('button[type="submit"]')
-    await expect(page2).toHaveURL('/')
-
-    await page2.goto(docUrl)
-
-    // Both editors ready
-    await expect(page1.locator('.ProseMirror')).toBeVisible({ timeout: 15000 })
-    await expect(page2.locator('.ProseMirror')).toBeVisible({ timeout: 15000 })
-
-    // User1 types and places cursor
-    await page1.locator('.ProseMirror').click()
-    await page1.keyboard.type('Some text here')
-    await page1.locator('.ProseMirror').click()
-
-    // User2 should see a remote cursor indicator (collaboration cursor)
-    // The cursor is rendered as a span with class containing "collaboration-cursor"
-    await expect(page2.locator('.collaboration-cursor__label, [class*="cursor"]')).toBeVisible({ timeout: 15000 })
-
-    await user1.close()
-    await user2.close()
-  })
+            // TipTap CollaborationCursor 会渲染 .collaboration-cursor__caret / __label（label 为对方用户名）
+            const peerCursor = page1.locator('.collaboration-cursor__label').first()
+            await expect(peerCursor).toBeVisible({ timeout: 15000 })
+            await expect(peerCursor).toHaveText(peerName)
+        } finally {
+            await context1.close()
+            await context2.close()
+        }
+    })
 })

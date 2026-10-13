@@ -1,61 +1,55 @@
 import { test, expect } from '@playwright/test'
+import { registerAndLogin, uniqueUsername } from './helpers'
 
-const uniqueUsername = () => `e2e-user-${Date.now()}`
+const USERNAME_INPUT = 'input[placeholder="Enter username"]'
+const PASSWORD_INPUT = 'input[placeholder="Enter password"]'
 
-test.describe('Authentication flow', () => {
-  test('register a new user', async ({ page }) => {
-    await page.goto('/register')
+test.describe('Authentication flow', () =>
+{
+    test('register a new user', async ({ page }) =>
+    {
+        await registerAndLogin(page, uniqueUsername('e2e-auth'))
 
-    await page.fill('input[placeholder="Choose a username"]', uniqueUsername())
-    await page.fill('input[placeholder="At least 6 characters"]', 'pass123')
-    await page.click('button[type="submit"]')
+        // 注册后落在文档列表页（已登录路由 `/` → DocsPage）
+        await expect(page.locator('#create-doc-btn')).toBeVisible()
+        await expect(page.locator('.user-badge')).toHaveAttribute('title', /e2e-auth/)
+    })
 
-    // Should redirect to docs page
-    await expect(page).toHaveURL('/')
-    // DocsPage should show the "New" button
-    await expect(page.locator('text=/new/i')).toBeVisible({ timeout: 10000 })
-  })
+    test('login with existing user', async ({ page }) =>
+    {
+        const username = await registerAndLogin(page, uniqueUsername('e2e-auth'))
 
-  test('login with existing user', async ({ page }) => {
-    const username = uniqueUsername()
+        // 退出登录：回到登录页
+        await page.click('.logout-btn')
+        await expect(page.locator('.auth-title')).toHaveText('Sign in')
 
-    // First register
-    await page.goto('/register')
-    await page.fill('input[placeholder="Choose a username"]', username)
-    await page.fill('input[placeholder="At least 6 characters"]', 'pass123')
-    await page.click('button[type="submit"]')
-    await expect(page).toHaveURL('/')
+        // 用刚注册的账号重新登录
+        await page.fill(USERNAME_INPUT, username)
+        await page.fill(PASSWORD_INPUT, 'pass123')
+        await page.click('button[type="submit"]')
 
-    // Logout (click logout button)
-    await page.reload()
-    // Look for a logout button — may need to adjust selector
-    const logoutBtn = page.locator('[title="Logout"], button:has-text("Logout"), button:has-text("Sign out")')
-    if (await logoutBtn.isVisible()) {
-      await logoutBtn.click()
-      await expect(page).toHaveURL(/login|register/)
-    }
+        await expect(page).toHaveURL('/')
+        await expect(page.locator('#create-doc-btn')).toBeVisible()
+    })
 
-    // Login again
-    await page.goto('/login')
-    await page.fill('input[placeholder="Enter username"]', username)
-    await page.fill('input[placeholder="Enter password"]', 'pass123')
-    await page.click('button[type="submit"]')
+    test('login with wrong password shows error', async ({ page }) =>
+    {
+        await page.goto('/') // 未登录时任意路径都渲染登录页
+        await page.fill(USERNAME_INPUT, 'nonexistent-user')
+        await page.fill(PASSWORD_INPUT, 'wrongpass')
+        await page.click('button[type="submit"]')
 
-    await expect(page).toHaveURL('/')
-  })
+        await expect(page.locator('.auth-error')).toBeVisible({ timeout: 10000 })
+        await expect(page).toHaveURL('/') // 仍停留在登录页
+    })
 
-  test('login with wrong password shows error', async ({ page }) => {
-    await page.goto('/login')
-    await page.fill('input[placeholder="Enter username"]', 'nonexistent-user')
-    await page.fill('input[placeholder="Enter password"]', 'wrongpass')
-    await page.click('button[type="submit"]')
+    test('unauthenticated access to editor shows login form', async ({ page }) =>
+    {
+        // 说明：App.tsx 未登录分支用 path="*" 兜底渲染登录页，因此 URL 保持原样、不做跳转
+        await page.goto('/document/some-doc-id')
 
-    // Should show error message (not redirect)
-    await expect(page.locator('.auth-error')).toBeVisible({ timeout: 5000 })
-  })
-
-  test('unauthenticated access to editor redirects to login', async ({ page }) => {
-    await page.goto('/document/some-doc-id')
-    await expect(page).toHaveURL(/login|register/)
-  })
+        await expect(page.locator('.auth-title')).toHaveText('Sign in')
+        await expect(page.locator(USERNAME_INPUT)).toBeVisible()
+        await expect(page.locator('.ProseMirror')).toHaveCount(0)
+    })
 })
