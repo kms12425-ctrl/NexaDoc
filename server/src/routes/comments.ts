@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { ObjectId } from 'mongodb'
 import { getDB } from '../db'
 import { AuthRequest } from '../auth'
+import { resolveAccess } from '../rbac'
 import type { DocumentDoc, CommentDoc } from '../types'
 
 const router = Router()
@@ -47,12 +48,17 @@ router.post('/:docId/comments', async (req: AuthRequest, res: any) => {
     return
   }
 
-  const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
-  if (!doc) {
+  const access = await resolveAccess(String(req.params.docId), req.user!.id)
+  if (!access) {
     res.status(404).json({ error: 'Document not found' })
     return
   }
+  if (!access.abilities.canComment) {
+    res.status(403).json({ error: 'You do not have permission to comment on this document' })
+    return
+  }
 
+  const doc = access.doc
   const now = new Date()
   const result = await db.collection<CommentDoc>('comments').insertOne({
     documentId: doc._id!,
@@ -72,6 +78,17 @@ router.post('/:docId/comments', async (req: AuthRequest, res: any) => {
  */
 router.patch('/:docId/comments/:commentId/resolve', async (req: AuthRequest, res: any) => {
   const db = getDB()
+
+  const access = await resolveAccess(String(req.params.docId), req.user!.id)
+  if (!access) {
+    res.status(404).json({ error: 'Document not found' })
+    return
+  }
+  if (!access.abilities.canComment) {
+    res.status(403).json({ error: 'You do not have permission to resolve comments on this document' })
+    return
+  }
+
   await db.collection<CommentDoc>('comments').updateOne(
     { _id: new ObjectId(req.params.commentId as string) },
     { $set: { resolved: true, updatedAt: new Date() } }

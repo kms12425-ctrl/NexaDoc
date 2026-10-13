@@ -454,29 +454,39 @@ export default function Editor()
             {connected ? 'Connected' : 'Offline'}
           </div>
 
-          <button
-            className={`mode-btn ${mode === 'edit' ? 'editing' : 'viewing'}`}
-            onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
-            title={mode === 'edit' ? 'Switch to view mode' : 'Switch to edit mode'}
-          >
-            {mode === 'edit' ? (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
-                Editing
-              </>
-            ) : (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-                Viewing
-              </>
-            )}
-          </button>
+          {abilities.canEdit === false ? (
+            <span className="mode-btn viewing" title="只读模式">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              Viewing
+            </span>
+          ) : (
+            <button
+              className={`mode-btn ${mode === 'edit' ? 'editing' : 'viewing'}`}
+              onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+              title={mode === 'edit' ? '切换到查看模式' : '切换到编辑模式'}
+            >
+              {mode === 'edit' ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                  Editing
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  Viewing
+                </>
+              )}
+            </button>
+          )}
 
           <div className="export-group">
             <button className="export-btn" onClick={exportPDF} title="Export as PDF">PDF</button>
@@ -540,7 +550,7 @@ export default function Editor()
         {showComments && session && (
           <CommentPanel
             docId={id || ''}
-            canComment={abilities.canComment !== false}
+            canComment={abilities.canComment === true}
             onClose={() => setShowComments(false)}
           />
         )}

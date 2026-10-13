@@ -9,6 +9,8 @@ import jwt from 'jsonwebtoken'
 // y-websocket/bin/utils 没有 TypeScript 类型声明，用 require 避免 TS 报错
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { setupWSConnection, setPersistence } = require('y-websocket/bin/utils')
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const decoding = require('lib0/decoding')
 
 import { connectDB, getDB, closeDB } from './db'
 import { mongoPersistence, flushAll, beginShutdown } from './persistence'
@@ -94,12 +96,47 @@ const wss = new WebSocketServer({ noServer: true, perMessageDeflate: true })
 // 注册 MongoDB 持久化层（y-websocket v2 用 setPersistence 全局设置）
 setPersistence(mongoPersistence)
 
+// y-websocket 消息类型常量（与 y-protocols/sync 一致）
+const messageSync = 0
+// sync 子类型：0=step1, 1=step2, 2=update
+const syncStepUpdate = 2
+
+/**
+ * 判断 WebSocket 消息是否为 Yjs sync update（客户端发来的编辑操作）。
+ * sync step1（请求状态）和 step2（确认状态）允许通过，只有 update 被拦截。
+ */
+function isSyncUpdate(data: Buffer | ArrayBuffer): boolean
+{
+  try {
+    const buf = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data)
+    const decoder = decoding.createDecoder(buf)
+    const messageType = decoding.readVarUint(decoder)
+    if (messageType !== messageSync) return false
+    const syncType = decoding.readVarUint(decoder)
+    return syncType === syncStepUpdate
+  } catch {
+    return false
+  }
+}
+
 wss.on('connection', (ws, req) =>
 {
   // 从 URL 提取 docName：/yjs/<docId> → <docId>
   // 必须先解码（浏览器对非 ASCII 路径会 percent-encode），
   // 否则 docName 与 REST 层使用的 docId 不是同一个 key（详见 docId.ts）
   const docName = decodeDocName(new URL(req.url || '/', 'http://x').pathname)
+  const readOnly = (req as any).__readOnly === true
+
+  if (readOnly) {
+    // 只读用户：拦截 sync update 消息（编辑操作），允许 step1/step2/awareness 正常交换
+    const originalEmit = ws.emit.bind(ws)
+    ws.emit = (event: string, ...args: any[]): boolean => {
+      if (event === 'message' && args.length > 0 && isSyncUpdate(args[0] as Buffer)) {
+        return true // 吃掉 update 消息，不让 y-websocket 的 messageListener 处理
+      }
+      return originalEmit(event, ...args)
+    }
+  }
 
   setupWSConnection(ws, req, { docName })
 })
@@ -187,12 +224,18 @@ server.on('upgrade', (request, socket, head) =>
           rejectUpgrade(socket, 404, 'Document Not Found')
           return
         }
-        if (!access.abilities.canEdit) {
+        // 无查看权限 → 拒绝
+        if (access.abilities.canView === false) {
           rejectUpgrade(socket, 403, 'Forbidden')
           return
         }
+        // 有查看权限但无编辑权限 → 允许连接，标记为只读
+        const readOnly = !access.abilities.canEdit
         wss.handleUpgrade(request, socket, head, (ws) =>
         {
+          if (readOnly) {
+            (request as any).__readOnly = true
+          }
           wss.emit('connection', ws, request)
         })
       })
