@@ -13,7 +13,7 @@ import Highlight from '@tiptap/extension-highlight'
 import FontFamily from '@tiptap/extension-font-family'
 import Placeholder from '@tiptap/extension-placeholder'
 import { createYjs } from '../services/yjsProvider'
-import { documentsApi } from '../services/api'
+import { documentsApi, getNotificationWsUrl } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import html2pdf from 'html2pdf.js'
 import { saveAs } from 'file-saver'
@@ -90,6 +90,7 @@ export default function Editor()
   const [showHistory, setShowHistory] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [showComments, setShowComments] = useState(false)
+  const [revoked, setRevoked] = useState(false)
 
   // 协作会话——同步创建，确保 useEditor 首次渲染就有 document
   // 传入认证用户的 id/name/color，替代随机生成
@@ -264,6 +265,33 @@ export default function Editor()
       })()
     return () => { cancelled = true }
   }, [id])
+
+  /* ── 监听权限撤销通知 ─────────────────────────────────── */
+  useEffect(() => {
+    const wsUrl = getNotificationWsUrl()
+    if (!wsUrl.includes('token=')) return
+
+    const ws = new WebSocket(wsUrl)
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'access-revoked' && data.docId === id) {
+          setRevoked(true)
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    return () => ws.close()
+  }, [id])
+
+  /* ── 被移除后确认退出 ─────────────────────────────────── */
+  const handleRevokedConfirm = useCallback(() => {
+    session?.destroy()
+    navigate('/')
+  }, [session, navigate])
 
   /* ── 持久化标题到 API（debounce 1s）────────────────────────── */
   useEffect(() =>
@@ -572,6 +600,23 @@ export default function Editor()
           canViewHistory={abilities.canViewHistory !== false}
           onClose={() => setShowHistory(false)}
         />
+      )}
+
+      {/* ── 被移除提示弹窗 ──────────────────────────────── */}
+      {revoked && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Access revoked">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">Access revoked</h2>
+            <p className="modal-subtitle">
+              You no longer have access to this document.
+            </p>
+            <div className="modal-actions">
+              <button className="modal-create" onClick={handleRevokedConfirm}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
