@@ -1,70 +1,47 @@
 import { test, expect } from '@playwright/test'
+import { createDocument, registerAndLogin, uniqueUsername, waitForEditorReady } from './helpers'
 
-const uniqueUsername = () => `e2e-export-${Date.now()}`
+test.describe('Export functionality', () =>
+{
+    test.beforeEach(async ({ page }) =>
+    {
+        await registerAndLogin(page, uniqueUsername('e2e-export'))
+        await createDocument(page, `Export Doc ${Date.now()}`)
+        await waitForEditorReady(page)
+    })
 
-async function registerAndCreateDoc(page: import('@playwright/test').Page, docName: string) {
-  await page.goto('/register')
-  await page.fill('input[placeholder="Choose a username"]', uniqueUsername())
-  await page.fill('input[placeholder="At least 6 characters"]', 'pass123')
-  await page.click('button[type="submit"]')
-  await expect(page).toHaveURL('/')
+    test('PDF export button is visible', async ({ page }) =>
+    {
+        await expect(page.locator('button[title="Export as PDF"]')).toBeVisible()
+    })
 
-  await page.click('text=/new/i')
-  await page.fill('input[placeholder*="name" i]', docName)
-  await page.click('button:has-text("Create"), button:has-text("OK"), button[type="submit"]')
-  await expect(page).toHaveURL(/\/document\//, { timeout: 10000 })
-}
+    test('DOCX export button is visible', async ({ page }) =>
+    {
+        await expect(page.locator('button[title="Export as DOCX"]')).toBeVisible()
+    })
 
-test.describe('Export functionality', () => {
-  test('PDF export button is visible', async ({ page }) => {
-    await registerAndCreateDoc(page, 'Export Test Doc')
+    test('clicking PDF export triggers download', async ({ page }) =>
+    {
+        await page.locator('.ProseMirror').click()
+        await page.keyboard.type('Content for PDF export.')
 
-    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 15000 })
+        // html2pdf.js 在前端生成，大文档较慢，这里给足超时
+        const downloadPromise = page.waitForEvent('download', { timeout: 30000 })
+        await page.click('button[title="Export as PDF"]')
 
-    // PDF export button should be present in the toolbar
-    await expect(page.locator('button[title="Export as PDF"]')).toBeVisible({ timeout: 5000 })
-  })
+        const download = await downloadPromise
+        expect(download.suggestedFilename()).toMatch(/\.pdf$/i)
+    })
 
-  test('DOCX export button is visible', async ({ page }) => {
-    await registerAndCreateDoc(page, 'Export Test Doc 2')
+    test('clicking DOCX export triggers download', async ({ page }) =>
+    {
+        await page.locator('.ProseMirror').click()
+        await page.keyboard.type('Content for DOCX export.')
 
-    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 15000 })
+        const downloadPromise = page.waitForEvent('download', { timeout: 30000 })
+        await page.click('button[title="Export as DOCX"]')
 
-    // DOCX export button should be present in the toolbar
-    await expect(page.locator('button[title="Export as DOCX"]')).toBeVisible({ timeout: 5000 })
-  })
-
-  test('clicking PDF export triggers download', async ({ page }) => {
-    await registerAndCreateDoc(page, 'PDF Download Test')
-
-    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 15000 })
-
-    // Type some content
-    await page.locator('.ProseMirror').click()
-    await page.keyboard.type('Content for PDF export.')
-
-    // Set up download listener before clicking
-    const downloadPromise = page.waitForEvent('download', { timeout: 15000 })
-    await page.locator('button[title="Export as PDF"]').click()
-
-    const download = await downloadPromise
-    expect(download.suggestedFilename()).toMatch(/\.pdf$/i)
-  })
-
-  test('clicking DOCX export triggers download', async ({ page }) => {
-    await registerAndCreateDoc(page, 'DOCX Download Test')
-
-    await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 15000 })
-
-    // Type some content
-    await page.locator('.ProseMirror').click()
-    await page.keyboard.type('Content for DOCX export.')
-
-    // Set up download listener before clicking
-    const downloadPromise = page.waitForEvent('download', { timeout: 15000 })
-    await page.locator('button[title="Export as DOCX"]').click()
-
-    const download = await downloadPromise
-    expect(download.suggestedFilename()).toMatch(/\.docx$/i)
-  })
+        const download = await downloadPromise
+        expect(download.suggestedFilename()).toMatch(/\.docx$/i)
+    })
 })

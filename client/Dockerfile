@@ -1,5 +1,5 @@
 # 独立构建前端静态镜像（方案 B / 单独部署场景）
-#   docker build -f client/Dockerfile -t collaborative-docs-v2-web client
+#   docker build -f client/Dockerfile -t nexadoc-web client
 # nginx 同时承担 SPA 回退与 /api、/yjs、/ws 反向代理（含 WebSocket 升级）
 ARG NODE_IMAGE=node:22-alpine
 

@@ -1,5 +1,7 @@
 import express, { Request, Response } from 'express'
 import http from 'http'
+import path from 'path'
+import fs from 'fs'
 import cors from 'cors'
 import { WebSocketServer } from 'ws'
 import jwt from 'jsonwebtoken'
@@ -8,10 +10,10 @@ import jwt from 'jsonwebtoken'
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { setupWSConnection, setPersistence } = require('y-websocket/bin/utils')
 
-import { connectDB, getDB } from './db'
-import { mongoPersistence } from './persistence'
+import { connectDB, getDB, closeDB } from './db'
+import { mongoPersistence, flushAll, beginShutdown } from './persistence'
 import { register, login, requireAuth, AuthRequest } from './auth'
-import { addConnection, removeConnection } from './notifications'
+import { addConnection, removeConnection, closeAllConnections } from './notifications'
 import { resolveAccess } from './rbac'
 import { decodeDocName } from './docId'
 import type { WebSocket } from 'ws'
@@ -55,6 +57,29 @@ app.use('/api/documents', requireAuth, documentsRouter)
 app.use('/api/documents', requireAuth, sharingRouter)
 app.use('/api/documents', requireAuth, commentsRouter)
 app.use('/api/documents', requireAuth, snapshotsRouter)
+
+/* ── 生产环境：托管前端构建产物（容器镜像内路径 /app/public）── */
+// 目录不存在时（纯开发模式）整段跳过，不影响 Vite :5173 的开发流程
+const CLIENT_DIST = process.env.CLIENT_DIST || path.resolve(__dirname, '..', 'public')
+if (fs.existsSync(CLIENT_DIST)) {
+  app.use(express.static(CLIENT_DIST, { index: 'index.html' }))
+
+  // SPA fallback：Express 5 不再支持 app.get('*')（path-to-regexp v8 要求具名通配符），
+  // 故用无路径中间件实现；放行 /api、/yjs、/ws、/health 与「带扩展名的静态资源」，
+  // 避免接口 404 被吞、以及缺失的 .js/.css 被换成 HTML（会触发 MIME 类型报错）
+  app.use((req, res, next) =>
+  {
+    const p = req.path
+    const isEndpoint =
+      p.startsWith('/api') || p.startsWith('/yjs') || p.startsWith('/ws') || p === '/health'
+    const isAsset = path.extname(p) !== ''
+    if (req.method !== 'GET' || isEndpoint || isAsset) {
+      next()
+      return
+    }
+    res.sendFile(path.join(CLIENT_DIST, 'index.html'))
+  })
+}
 
 /* ── Global error handler ── */
 app.use((err: Error, _req: Request, res: Response, _next: any) =>
@@ -202,23 +227,51 @@ start().catch((err) =>
 })
 
 /* ─── Graceful shutdown ───────────────────────────────────────── */
-function shutdown(signal: string): void
+async function shutdown(signal: string): Promise<void>
 {
   console.log(`\n[server] Received ${signal}. Shutting down gracefully…`)
-  server.close(() =>
-  {
-    console.log('[server] HTTP server closed.')
-    process.exit(0)
-  })
-  setTimeout(() =>
+
+  // 兜底：10s 内没退干净就强制退出（docker stop 默认也是 10s 后 SIGKILL）
+  const force = setTimeout(() =>
   {
     console.error('[server] Forced exit after timeout.')
     process.exit(1)
-  }, 5000)
+  }, 10_000)
+  force.unref()
+
+  try {
+    // 0) 进入退出态：此后 y-websocket 断连触发的 writeState 会被跳过（由 flushAll 统一回写）
+    beginShutdown()
+
+    // 1) 停止接收新连接，并关掉 keep-alive 长连接（否则 server.close() 要等客户端主动断开）
+    server.close()
+    server.closeAllConnections()
+
+    // 2) 断开两条 WebSocket 通道上的客户端后关闭服务
+    closeAllConnections()
+    for (const ws of wss.clients) ws.terminate()
+    await Promise.all([
+      new Promise<void>((resolve) => notifyWss.close(() => resolve())),
+      new Promise<void>((resolve) => wss.close(() => resolve())),
+    ])
+
+    // 3) 把 debounce 窗口（1s）内尚未落库的编辑立即写入 MongoDB
+    await flushAll()
+
+    // 4) 关闭 MongoDB 连接，释放事件循环
+    await closeDB()
+
+    console.log('[server] Shutdown complete.')
+    process.exit(0)
+  }
+  catch (err) {
+    console.error('[server] Error during shutdown:', err)
+    process.exit(1)
+  }
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'))
-process.on('SIGINT', () => shutdown('SIGINT'))
+process.on('SIGTERM', () => { void shutdown('SIGTERM') })
+process.on('SIGINT', () => { void shutdown('SIGINT') })
 
 /* ─── Global error handlers ──────────────────────────────────── */
 process.on('unhandledRejection', (reason, promise) =>

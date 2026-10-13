@@ -5,6 +5,8 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // 在测试文件被 import 之前注入，保证 auth.ts 等模块固化的 JWT_SECRET 与测试一致
+    env: { JWT_SECRET: 'test-secret' },
     hookTimeout: 60000,
     fileParallelism: false,
     coverage: {

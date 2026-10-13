@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
@@ -10,6 +10,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // e2e/**/*.spec.ts 属于 Playwright，不能被 Vitest 收集
+    exclude: [...configDefaults.exclude, 'e2e/**'],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],

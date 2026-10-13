@@ -1,5 +1,5 @@
 # 独立构建服务端镜像（方案 B / 单独部署场景）
-#   docker build -f server/Dockerfile -t collaborative-docs-v2-server server
+#   docker build -f server/Dockerfile -t nexadoc-server server
 # 需要前端时请配合 client/Dockerfile 的 nginx 镜像（见 compose.split.yml）
 ARG NODE_IMAGE=node:22-alpine
 
