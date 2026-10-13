@@ -71,7 +71,7 @@ export default function DocsPage() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        if (data.type === 'document-shared') {
+        if (data.type === 'document-shared' || data.type === 'access-revoked') {
           loadDocs()
         }
       } catch {

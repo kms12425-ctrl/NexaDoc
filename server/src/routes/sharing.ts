@@ -142,6 +142,13 @@ router.delete('/:docId/access/:userId', async (req: AuthRequest, res: any) =>
     userId: new ObjectId(req.params.userId as string),
   })
 
+  // ── 通知被移除的用户 ──
+  notifyUser(req.params.userId as string, {
+    type: 'access-revoked',
+    docId: doc.docId,
+    name: doc.title,
+  })
+
   res.json({ status: 'ok' })
 })
 
