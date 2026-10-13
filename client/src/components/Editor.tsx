@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import type { Editor as TipTapEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -22,6 +22,7 @@ import type { CollabSession, RemoteUserState, DocumentAbilities } from '../types
 import { EditorToolbar } from './EditorToolbar'
 import { FontSize } from '../extensions/FontSize'
 import Link from '@tiptap/extension-link'
+import type { DocumentTemplate } from '../templates'
 import VersionHistoryModal from './VersionHistoryModal'
 import ShareModal from './ShareModal'
 import CommentPanel from './CommentPanel'
@@ -76,6 +77,7 @@ export default function Editor()
 {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
 
   // 标题状态——先用 fallback 快速渲染，API 返回后更新
@@ -333,6 +335,24 @@ export default function Editor()
       editor.setEditable(true)
     }
   }, [mode, editor])
+
+  /* ── 从模板创建文档时注入模板内容 ──────────────────────── */
+  useEffect(() =>
+  {
+    if (!editor) return
+    const template = (location.state as { template?: DocumentTemplate } | null)?.template
+    if (!template) return
+
+    // 等 Yjs 同步就绪后注入模板内容
+    const timer = setTimeout(() =>
+    {
+      editor.commands.setContent(template.content)
+      // 清除 location.state，避免刷新时重复注入
+      window.history.replaceState({}, '')
+    }, 200)
+
+    return () => clearTimeout(timer)
+  }, [editor, location.state])
 
   /* ── 导出 handlers ───────────────────────────────────────── */
   const exportPDF = useCallback(() =>
