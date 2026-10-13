@@ -14,7 +14,7 @@
 This is the browser-side application. It combines:
 
 - **Quill v2** as the rich-text editing surface
-- **Yjs** for conflict-free real-time collaborative editing (CRDT)
+- **Yjs** for conflict-free real-time co-editing (CRDT)
 - **React 19 + React Router v7** for UI and routing
 - **Vite 8** as the dev server and bundler
 
@@ -116,7 +116,7 @@ All styling uses a CSS custom property (token) system. Key sections:
 | Quill font classes | `.ql-font-<name>` — one class per supported font family |
 | Quill size classes | `.ql-size-<Npt>` — 8 pt through 72 pt |
 | Size picker labels | `::before` overrides with `!important` to beat Quill snow.css specificity |
-| Topbar | Sticky Google Docs-style header with branding, title input, avatars |
+| Topbar | Sticky document-editor-style header with branding, title input, avatars |
 | Editor shell | Centred paper-like container with shadow |
 | DocsPage | Card grid, search bar, header |
 | Modals | Create document / delete confirmation (animated, keyboard accessible) |
@@ -164,7 +164,7 @@ Each font is loaded from Google Fonts in `index.html` and mapped to a Quill font
 
 ## ⚡ Font Sizes (15 total)
 
-Sizes use **pt units** to match standard document conventions (Word, Google Docs):
+Sizes use **pt units** to match standard document conventions:
 
 `8pt · 9pt · 10pt · 11pt · 12pt · 14pt · 16pt · 18pt · 20pt · 24pt · 28pt · 32pt · 36pt · 48pt · 72pt`
 
