@@ -12,8 +12,8 @@ test.describe('Authentication flow', () => {
 
     // Should redirect to docs page
     await expect(page).toHaveURL('/')
-    // DocsPage should show the "New" button
-    await expect(page.locator('text=/new/i')).toBeVisible({ timeout: 10000 })
+    // DocsPage should show the "New document" button
+    await expect(page.locator('#create-doc-btn')).toBeVisible({ timeout: 10000 })
   })
 
   test('login with existing user', async ({ page }) => {
@@ -28,12 +28,8 @@ test.describe('Authentication flow', () => {
 
     // Logout (click logout button)
     await page.reload()
-    // Look for a logout button — may need to adjust selector
-    const logoutBtn = page.locator('[title="Logout"], button:has-text("Logout"), button:has-text("Sign out")')
-    if (await logoutBtn.isVisible()) {
-      await logoutBtn.click()
-      await expect(page).toHaveURL(/login|register/)
-    }
+    await page.locator('.logout-btn').click()
+    await expect(page).toHaveURL(/login|register/)
 
     // Login again
     await page.goto('/login')

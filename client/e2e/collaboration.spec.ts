@@ -19,9 +19,9 @@ test.describe('Real-time collaboration', () => {
     await expect(page1).toHaveURL('/')
 
     // Create a document as user1
-    await page1.click('text=/new/i')
-    await page1.fill('input[placeholder*="name" i]', 'Collab Test Doc')
-    await page1.click('button:has-text("Create"), button:has-text("OK"), button[type="submit"]')
+    await page1.locator('#create-doc-btn').click()
+    await page1.getByLabel('Document name').fill('Collab Test Doc')
+    await page1.locator('#confirm-create-doc').click()
     await expect(page1).toHaveURL(/\/document\//, { timeout: 10000 })
 
     // Get the doc URL
@@ -74,9 +74,9 @@ test.describe('Real-time collaboration', () => {
     await page1.click('button[type="submit"]')
     await expect(page1).toHaveURL('/')
 
-    await page1.click('text=/new/i')
-    await page1.fill('input[placeholder*="name" i]', 'Cursor Test')
-    await page1.click('button:has-text("Create"), button:has-text("OK"), button[type="submit"]')
+    await page1.locator('#create-doc-btn').click()
+    await page1.getByLabel('Document name').fill('Cursor Test')
+    await page1.locator('#confirm-create-doc').click()
     await expect(page1).toHaveURL(/\/document\//, { timeout: 10000 })
 
     const docUrl = page1.url()
@@ -99,8 +99,8 @@ test.describe('Real-time collaboration', () => {
     await page1.locator('.ProseMirror').click()
 
     // User2 should see a remote cursor indicator (collaboration cursor)
-    // The cursor is rendered as a span with class containing "collaboration-cursor"
-    await expect(page2.locator('.collaboration-cursor__label, [class*="cursor"]')).toBeVisible({ timeout: 15000 })
+    // Rendered as caret + label elements attached to the remote user's cursor
+    await expect(page2.locator('.collaboration-cursor__caret, .collaboration-cursor__label').first()).toBeVisible({ timeout: 15000 })
 
     await user1.close()
     await user2.close()

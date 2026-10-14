@@ -16,18 +16,18 @@ test.describe('Document CRUD', () => {
   test('create a document', async ({ page }) => {
     const docName = uniqueDocName()
 
-    // Click "New" button
-    await page.click('text=/new/i')
+    // Open the "New document" modal (header button)
+    await page.locator('#create-doc-btn').click()
 
     // Fill document name in modal
-    await page.fill('input[placeholder*="name" i]', docName)
-    await page.click('button:has-text("Create"), button:has-text("OK"), button[type="submit"]')
+    await page.getByLabel('Document name').fill(docName)
+    await page.locator('#confirm-create-doc').click()
 
     // Should navigate to editor
     await expect(page).toHaveURL(/\/document\//, { timeout: 10000 })
 
-    // Document name should appear in editor
-    await expect(page.locator(`text=${docName}`).first()).toBeVisible({ timeout: 10000 })
+    // Document name should appear in the editor title input
+    await expect(page.getByLabel('Document title')).toHaveValue(docName, { timeout: 10000 })
   })
 
   test('document appears in list after creation', async () => {
@@ -38,39 +38,31 @@ test.describe('Document CRUD', () => {
   test('delete a document', async ({ page }) => {
     // First create a doc
     const docName = uniqueDocName()
-    await page.click('text=/new/i')
-    await page.fill('input[placeholder*="name" i]', docName)
-    await page.click('button:has-text("Create"), button:has-text("OK"), button[type="submit"]')
+    await page.locator('#create-doc-btn').click()
+    await page.getByLabel('Document name').fill(docName)
+    await page.locator('#confirm-create-doc').click()
     await expect(page).toHaveURL(/\/document\//, { timeout: 10000 })
 
     // Go back to docs list
     await page.goto('/')
 
-    // Find the doc card and delete
-    const docCard = page.locator(`text=${docName}`).first()
-    await expect(docCard).toBeVisible({ timeout: 10000 })
+    // Find the doc card
+    await expect(page.getByText(docName)).toBeVisible({ timeout: 10000 })
 
-    // Click delete button on the card
-    const deleteBtn = page.locator(`:has-text("${docName}") ~ [title*="Delete" i], [title*="delete" i]`).first()
-    if (await deleteBtn.isVisible()) {
-      await deleteBtn.click()
-      // Confirm if there's a confirmation dialog
-      const confirmBtn = page.locator('button:has-text("Delete"), button:has-text("Confirm")')
-      if (await confirmBtn.isVisible()) {
-        await confirmBtn.click()
-      }
-    }
+    // Delete via the card's delete button + confirm dialog
+    await page.getByRole('button', { name: `Delete ${docName}` }).click()
+    await page.locator('#confirm-delete-doc').click()
 
     // Doc should no longer be visible
-    await expect(page.locator(`text=${docName}`)).toHaveCount(0, { timeout: 10000 })
+    await expect(page.getByText(docName)).toHaveCount(0, { timeout: 10000 })
   })
 
   test('search filters documents', async ({ page }) => {
     // Create two docs with different names
     for (const name of ['Searchable Doc', 'Other Doc']) {
-      await page.click('text=/new/i')
-      await page.fill('input[placeholder*="name" i]', name)
-      await page.click('button:has-text("Create"), button:has-text("OK"), button[type="submit"]')
+      await page.locator('#create-doc-btn').click()
+      await page.getByLabel('Document name').fill(name)
+      await page.locator('#confirm-create-doc').click()
       await page.waitForURL(/\/document\//)
       await page.goto('/')
     }

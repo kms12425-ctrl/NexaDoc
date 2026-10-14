@@ -9,9 +9,9 @@ async function registerAndCreateDoc(page: import('@playwright/test').Page, docNa
   await page.click('button[type="submit"]')
   await expect(page).toHaveURL('/')
 
-  await page.click('text=/new/i')
-  await page.fill('input[placeholder*="name" i]', docName)
-  await page.click('button:has-text("Create"), button:has-text("OK"), button[type="submit"]')
+  await page.locator('#create-doc-btn').click()
+  await page.getByLabel('Document name').fill(docName)
+  await page.locator('#confirm-create-doc').click()
   await expect(page).toHaveURL(/\/document\//, { timeout: 10000 })
 }
 

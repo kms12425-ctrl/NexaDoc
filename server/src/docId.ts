@@ -13,11 +13,14 @@
  * 兼容历史遗留的（中文）URL。
  */
 
+import { randomBytes } from 'node:crypto'
+
 const MAX_SLUG_LENGTH = 40
 
 /**
  * 由文档标题生成 ASCII 安全的 docId。
- * 中文标题会退化为 `doc-<时间戳>`（可读的标题仍然原样保存在 `documents.title` 里）。
+ * 中文标题会退化为 `doc-<时间戳>-<随机>`（可读的标题仍然原样保存在 `documents.title` 里）。
+ * 尾部附加随机后缀（4 字节 hex）：避免"标题+时间戳"可被枚举的弱点（2026-10-10 V-6 加固）。
  */
 export function generateDocId(name: string): string
 {
@@ -30,7 +33,7 @@ export function generateDocId(name: string): string
         .slice(0, MAX_SLUG_LENGTH)
         .replace(/-+$/g, '') // 截断后可能留下尾部 '-'
 
-    return `${slug || 'doc'}-${Date.now()}`
+    return `${slug || 'doc'}-${Date.now()}-${randomBytes(4).toString('hex')}`
 }
 
 /**
