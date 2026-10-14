@@ -230,6 +230,7 @@ export default function DocsPage() {
                 {(templatesByCategory[startCategory] || []).map((tpl) => (
                   <button
                     key={tpl.id}
+                    id={tpl.id === 'blank' ? 'start-blank-doc' : undefined}
                     className="start-card template-start-card"
                     onClick={() => selectTemplate(tpl)}
                     title={tpl.description}

@@ -40,12 +40,12 @@ test.describe('Authentication flow', () =>
         await page.click('button[type="submit"]')
 
         await expect(page.locator('.auth-error')).toBeVisible({ timeout: 10000 })
-        await expect(page).toHaveURL('/') // 仍停留在登录页
+        await expect(page).toHaveURL(/\/login/) // 未登录访问 `/` 会被重定向到 `/login`，失败后仍停留于此
     })
 
     test('unauthenticated access to editor shows login form', async ({ page }) =>
     {
-        // 说明：App.tsx 未登录分支用 path="*" 兜底渲染登录页，因此 URL 保持原样、不做跳转
+        // 说明：App.tsx 未登录分支用 path="*" → Navigate to /login（URL 归一化为 /login）
         await page.goto('/document/some-doc-id')
 
         await expect(page.locator('.auth-title')).toHaveText('Sign in')
