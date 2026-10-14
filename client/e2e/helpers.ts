@@ -2,7 +2,7 @@ import { expect, type Locator, type Page } from '@playwright/test'
 
 /**
  * e2e 公共辅助——选择器全部对齐真实 UI：
- * - 登录页 `/`（未登录时 `*` 兜底渲染）：`.auth-title` = "Sign in"
+ * - 登录页 `/login`（未登录访问其他路径会重定向到 `/login`）：`.auth-title` = "Sign in"
  * - 注册页 `/register`：`.auth-title` = "Create account"
  * - 文档列表页：`#create-doc-btn` / `#start-blank-doc`
  * - 新建弹窗：`[aria-label="Document name"]` + `#confirm-create-doc`
