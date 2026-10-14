@@ -22,9 +22,6 @@ describe('TemplatePicker', () => {
   it('renders all templates by default (All tab active)', () => {
     renderPicker()
     // Each template card has a .template-card-name span
-    const cardNames = screen.getAllByClassName
-      ? [] as HTMLElement[]
-      : [] as HTMLElement[]
     const nameSpans = document.querySelectorAll('.template-card-name')
     const names = Array.from(nameSpans).map((el) => el.textContent)
     for (const tpl of allTemplates) {
