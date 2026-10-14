@@ -10,6 +10,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // e2e/** 与 e2e-measure/** 属于 Playwright，不能被 Vitest 收集
     exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-measure/**'],
     coverage: {
       provider: 'v8',

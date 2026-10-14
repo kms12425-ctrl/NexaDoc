@@ -13,7 +13,8 @@ import type { WebSocket } from 'ws'
 const connections = new Map<string, Set<WebSocket>>()
 
 /** 注册一个用户的 WebSocket 连接 */
-export function addConnection(userId: string, ws: WebSocket): void {
+export function addConnection(userId: string, ws: WebSocket): void
+{
   if (!connections.has(userId)) {
     connections.set(userId, new Set())
   }
@@ -22,7 +23,8 @@ export function addConnection(userId: string, ws: WebSocket): void {
 }
 
 /** 移除一个用户的 WebSocket 连接 */
-export function removeConnection(userId: string, ws: WebSocket): void {
+export function removeConnection(userId: string, ws: WebSocket): void
+{
   const set = connections.get(userId)
   if (!set) return
   set.delete(ws)
@@ -33,7 +35,8 @@ export function removeConnection(userId: string, ws: WebSocket): void {
 }
 
 /** 向某用户的所有连接推送一条事件 */
-export function notifyUser(userId: string, event: object): void {
+export function notifyUser(userId: string, event: object): void
+{
   const set = connections.get(userId)
   if (!set || set.size === 0) {
     console.log(`[notifications] User ${userId} offline, skipping notification`)
@@ -51,7 +54,17 @@ export function notifyUser(userId: string, event: object): void {
 }
 
 /** 检查用户是否在线 */
-export function isUserOnline(userId: string): boolean {
+export function isUserOnline(userId: string): boolean
+{
   const set = connections.get(userId)
   return !!set && set.size > 0
+}
+
+/** 断开全部通知连接（优雅退出用） */
+export function closeAllConnections(): void
+{
+  for (const set of connections.values()) {
+    for (const ws of set) ws.terminate()
+  }
+  connections.clear()
 }

@@ -1,0 +1,41 @@
+# 一键启动：docker compose up --build  →  http://localhost:3001
+# 零配置可用（默认值见 .env.example）；如需覆盖端口/密钥：cp .env.example .env
+name: nexadoc
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # 不向宿主发布 27017（避免与本地 dev 的 mongo 容器冲突）；
+    # 需要直连调试时临时加： ports: ["27018:27017"]
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      target: runtime
+    image: nexadoc:dev
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      MONGO_URI: mongodb://mongo:27017
+      DB_NAME: ${DB_NAME:-nexadoc}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3001}
+      CLIENT_DIST: /app/public
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:
