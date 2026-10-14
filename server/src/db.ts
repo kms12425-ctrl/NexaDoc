@@ -1,16 +1,25 @@
 import { MongoClient, Db } from 'mongodb'
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017'
-const DB_NAME = process.env.DB_NAME || 'nexadoc'
+// 注意：默认值必须在这里「延迟」读取 process.env。
+// 若在模块顶层固化（const X = process.env.MONGO_URI || ...），
+// 由于 setup.ts 是在 beforeAll 中才注入 MongoMemoryServer 的地址，
+// 测试就会连到本机 27017 的开发库（并清空它），内存库形同虚设。
+const DEFAULT_MONGO_URI = 'mongodb://localhost:27017'
+const DEFAULT_DB_NAME = 'nexadoc'
 
 let dbInstance: Db | null = null
+let clientInstance: MongoClient | null = null
 
-export async function connectDB(): Promise<Db> {
+export async function connectDB(): Promise<Db>
+{
   if (dbInstance) return dbInstance
 
-  const client = new MongoClient(MONGO_URI)
-  await client.connect()
-  dbInstance = client.db(DB_NAME)
+  const uri = process.env.MONGO_URI || DEFAULT_MONGO_URI
+  const dbName = process.env.DB_NAME || DEFAULT_DB_NAME
+
+  clientInstance = new MongoClient(uri)
+  await clientInstance.connect()
+  dbInstance = clientInstance.db(dbName)
 
   // 幂等创建索引
   await Promise.all([
@@ -30,11 +39,21 @@ export async function connectDB(): Promise<Db> {
     dbInstance.collection('comments').createIndex({ documentId: 1, createdAt: -1 }),
   ])
 
-  console.log(`[db] MongoDB connected: ${DB_NAME}`)
+  console.log(`[db] MongoDB connected: ${dbName}`)
   return dbInstance
 }
 
-export function getDB(): Db {
+export function getDB(): Db
+{
   if (!dbInstance) throw new Error('Database not connected. Call connectDB() first.')
   return dbInstance
+}
+
+/** 关闭 MongoDB 连接（优雅退出用；不关会让容器里的进程多等数秒才被强制终止） */
+export async function closeDB(): Promise<void>
+{
+  if (!clientInstance) return
+  await clientInstance.close()
+  clientInstance = null
+  dbInstance = null
 }

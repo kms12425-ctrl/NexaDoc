@@ -1,0 +1,30 @@
+# e2e 容器化：复用官方 Playwright 镜像（自带 Chromium），测**已启动的 app 服务**
+#
+# 用法（需先拉起主栈）：
+#   docker compose up -d
+#   docker compose -f compose.yml -f compose.e2e.yml run --rm e2e
+#
+# 说明：client 目录直接挂载进容器，node_modules 用命名卷隔离（不污染宿主）；
+#       PLAYWRIGHT_BASE_URL 指向 compose 网络内的 app 服务，故 playwright.config.ts 不会再拉起本地 dev 服务。
+# 注：首次需拉取 mcr.microsoft.com/playwright:* 镜像（约 1.5GB，不走 docker.io 镜像源）。
+name: nexadoc
+
+services:
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.63.0-jammy
+    profiles: ["e2e"]
+    working_dir: /work/client
+    environment:
+      CI: "1"
+      PLAYWRIGHT_BASE_URL: http://app:3001
+    volumes:
+      - ./client:/work/client
+      - e2e-node-modules:/work/client/node_modules
+      - ./client/playwright-report:/work/client/playwright-report
+    depends_on:
+      app:
+        condition: service_healthy
+    command: sh -c "npm ci && npx playwright test"
+
+volumes:
+  e2e-node-modules:

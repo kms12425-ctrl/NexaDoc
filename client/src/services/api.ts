@@ -7,7 +7,9 @@ import type {
   DocumentAbilities,
 } from '../types'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+// 默认同源（空字符串 → fetch('/api/...') 走当前 origin）：
+// 开发时由 Vite 代理转发到 :3001，生产时由 Express 同进程提供，无需构建期注入地址
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 /* ── Token 管理 ────────────────────────────────────────────── */
 const TOKEN_KEY = 'cdocs_token'
@@ -159,11 +161,24 @@ export const commentsApi = {
     }),
 }
 
+/* ── WebSocket 地址（同源派生，dev/prod 通用）─────────────────── */
+/** ws(s)://<当前 host> —— 开发为 :5173（Vite 代理），生产为 :3001（同进程） */
+export function getWsBase(): string
+{
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${location.host}`
+}
+
+/** Yjs 同步服务地址（可用 VITE_YJS_URL 显式覆盖） */
+export function getYjsWsUrl(): string
+{
+  return import.meta.env.VITE_YJS_URL || `${getWsBase()}/yjs`
+}
+
 /* ── Notification WebSocket URL ──────────────────────────────── */
 export function getNotificationWsUrl(): string
 {
   const token = getToken()
-  const yjsUrl = import.meta.env.VITE_YJS_URL || 'ws://localhost:5173/yjs'
-  const base = yjsUrl.replace(/\/yjs\/?$/, '')
+  const base = getYjsWsUrl().replace(/\/yjs\/?$/, '')
   return `${base}/ws/notifications?token=${token}`
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import type { Editor as TipTapEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -13,7 +13,7 @@ import Highlight from '@tiptap/extension-highlight'
 import FontFamily from '@tiptap/extension-font-family'
 import Placeholder from '@tiptap/extension-placeholder'
 import { createYjs } from '../services/yjsProvider'
-import { documentsApi } from '../services/api'
+import { documentsApi, getNotificationWsUrl } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import html2pdf from 'html2pdf.js'
 import { saveAs } from 'file-saver'
@@ -22,6 +22,7 @@ import type { CollabSession, RemoteUserState, DocumentAbilities } from '../types
 import { EditorToolbar } from './EditorToolbar'
 import { FontSize } from '../extensions/FontSize'
 import Link from '@tiptap/extension-link'
+import type { DocumentTemplate } from '../templates'
 import VersionHistoryModal from './VersionHistoryModal'
 import ShareModal from './ShareModal'
 import CommentPanel from './CommentPanel'
@@ -76,6 +77,7 @@ export default function Editor()
 {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
 
   // 标题状态——先用 fallback 快速渲染，API 返回后更新
@@ -90,6 +92,7 @@ export default function Editor()
   const [showHistory, setShowHistory] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [showComments, setShowComments] = useState(false)
+  const [revoked, setRevoked] = useState(false)
 
   // 协作会话——同步创建，确保 useEditor 首次渲染就有 document
   // 传入认证用户的 id/name/color，替代随机生成
@@ -265,6 +268,33 @@ export default function Editor()
     return () => { cancelled = true }
   }, [id])
 
+  /* ── 监听权限撤销通知 ─────────────────────────────────── */
+  useEffect(() => {
+    const wsUrl = getNotificationWsUrl()
+    if (!wsUrl.includes('token=')) return
+
+    const ws = new WebSocket(wsUrl)
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'access-revoked' && data.docId === id) {
+          setRevoked(true)
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    return () => ws.close()
+  }, [id])
+
+  /* ── 被移除后确认退出 ─────────────────────────────────── */
+  const handleRevokedConfirm = useCallback(() => {
+    session?.destroy()
+    navigate('/')
+  }, [session, navigate])
+
   /* ── 持久化标题到 API（debounce 1s）────────────────────────── */
   useEffect(() =>
   {
@@ -305,6 +335,24 @@ export default function Editor()
       editor.setEditable(true)
     }
   }, [mode, editor])
+
+  /* ── 从模板创建文档时注入模板内容 ──────────────────────── */
+  useEffect(() =>
+  {
+    if (!editor) return
+    const template = (location.state as { template?: DocumentTemplate } | null)?.template
+    if (!template) return
+
+    // 等 Yjs 同步就绪后注入模板内容
+    const timer = setTimeout(() =>
+    {
+      editor.commands.setContent(template.content)
+      // 清除 location.state，避免刷新时重复注入
+      window.history.replaceState({}, '')
+    }, 200)
+
+    return () => clearTimeout(timer)
+  }, [editor, location.state])
 
   /* ── 导出 handlers ───────────────────────────────────────── */
   const exportPDF = useCallback(() =>
@@ -454,29 +502,39 @@ export default function Editor()
             {connected ? 'Connected' : 'Offline'}
           </div>
 
-          <button
-            className={`mode-btn ${mode === 'edit' ? 'editing' : 'viewing'}`}
-            onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
-            title={mode === 'edit' ? 'Switch to view mode' : 'Switch to edit mode'}
-          >
-            {mode === 'edit' ? (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
-                Editing
-              </>
-            ) : (
-              <>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-                Viewing
-              </>
-            )}
-          </button>
+          {abilities.canEdit === false ? (
+            <span className="mode-btn viewing" title="只读模式">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              Viewing
+            </span>
+          ) : (
+            <button
+              className={`mode-btn ${mode === 'edit' ? 'editing' : 'viewing'}`}
+              onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+              title={mode === 'edit' ? '切换到查看模式' : '切换到编辑模式'}
+            >
+              {mode === 'edit' ? (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                  Editing
+                </>
+              ) : (
+                <>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  Viewing
+                </>
+              )}
+            </button>
+          )}
 
           <div className="export-group">
             <button className="export-btn" onClick={exportPDF} title="Export as PDF">PDF</button>
@@ -540,7 +598,7 @@ export default function Editor()
         {showComments && session && (
           <CommentPanel
             docId={id || ''}
-            canComment={abilities.canComment !== false}
+            canComment={abilities.canComment === true}
             onClose={() => setShowComments(false)}
           />
         )}
@@ -562,6 +620,23 @@ export default function Editor()
           canViewHistory={abilities.canViewHistory !== false}
           onClose={() => setShowHistory(false)}
         />
+      )}
+
+      {/* ── 被移除提示弹窗 ──────────────────────────────── */}
+      {revoked && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Access revoked">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-title">Access revoked</h2>
+            <p className="modal-subtitle">
+              You no longer have access to this document.
+            </p>
+            <div className="modal-actions">
+              <button className="modal-create" onClick={handleRevokedConfirm}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )

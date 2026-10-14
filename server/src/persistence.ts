@@ -4,6 +4,16 @@ import type { DocumentDoc } from './types'
 
 const DEBOUNCE_MS = 1000
 const timers = new Map<string, NodeJS.Timeout>()
+// 记录已绑定的文档，供优雅退出时立即回写（否则 debounce 窗口内的更新会丢）
+const boundDocs = new Map<string, Y.Doc>()
+// 退出中标志：此时 y-websocket 断连触发的 writeState 交给 flushAll 统一落库，避免与 closeDB 竞态
+let closing = false
+
+/** 进入优雅退出状态（应在断开 WS 连接之前调用） */
+export function beginShutdown(): void
+{
+  closing = true
+}
 
 /**
  * 把从 MongoDB 读回的二进制值统一成 Buffer。
@@ -67,6 +77,7 @@ export const mongoPersistence = {
       {
         scheduleSave(docName, ydoc)
       })
+      boundDocs.set(docName, ydoc)
     } catch (err) {
       console.error(`[persistence] bindState ERROR for ${docName}:`, err)
       throw err
@@ -75,6 +86,11 @@ export const mongoPersistence = {
 
   async writeState(docName: string, ydoc: Y.Doc): Promise<void>
   {
+    if (closing) {
+      // 退出流程中，flushAll() 会统一回写，这里跳过以免写入已被关闭的连接
+      console.log(`[persistence] writeState skipped (shutting down): ${docName}`)
+      return
+    }
     console.log(`[persistence] writeState: ${docName}`)
     const t = timers.get(docName)
     if (t) {
@@ -89,6 +105,37 @@ export const mongoPersistence = {
       throw err
     }
   },
+}
+
+/**
+ * 优雅退出：清掉 debounce 计时器，把所有已绑定文档立即回写 MongoDB。
+ * 否则服务在 debounce 窗口（1s）内被终止会丢掉最后的编辑。
+ */
+export async function flushAll(): Promise<void>
+{
+  const names = [...boundDocs.keys()]
+  for (const name of names) {
+    const t = timers.get(name)
+    if (t) {
+      clearTimeout(t)
+      timers.delete(name)
+    }
+  }
+
+  await Promise.all(
+    names.map(async (name) =>
+    {
+      const ydoc = boundDocs.get(name)
+      if (!ydoc) return
+      try {
+        await saveImmediate(name, ydoc)
+      }
+      catch (err) {
+        console.error(`[persistence] flushAll ERROR for ${name}:`, err)
+      }
+    })
+  )
+  console.log(`[persistence] flushed ${names.length} document(s)`)
 }
 
 function scheduleSave(docName: string, ydoc: Y.Doc): void

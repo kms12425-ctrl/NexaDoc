@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.vite
+
+# e2e 与测试产物不进静态镜像
+e2e
+playwright-report
+test-results
+
+*.log
+.env
+.env.*
+!.env.template

@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router-dom'
 import { documentsApi, getNotificationWsUrl } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import type { DocumentMeta } from '../types'
+import { templatesByCategory } from '../templates'
+import type { DocumentTemplate } from '../templates'
+import TemplatePicker from './TemplatePicker'
 
 /* ── Friendly relative-time formatter ───────────────────────── */
 function timeAgo(timestamp: number): string {
@@ -37,11 +40,13 @@ export default function DocsPage() {
   const [docs, setDocs] = useState<(DocumentMeta & { shared?: boolean })[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [newName, setNewName] = useState('')
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
+  const [startCategory, setStartCategory] = useState<string>('blank')
+  const [pendingTemplate, setPendingTemplate] = useState<DocumentTemplate | null>(null)
+  const [docName, setDocName] = useState('')
+  const nameInputRef = useRef<HTMLInputElement>(null)
   const [deleteTarget, setDeleteTarget] = useState<DocumentMeta | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
   /* ── Fetch documents from API ─────────────────────────────── */
@@ -71,7 +76,7 @@ export default function DocsPage() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        if (data.type === 'document-shared') {
+        if (data.type === 'document-shared' || data.type === 'access-revoked') {
           loadDocs()
         }
       } catch {
@@ -88,35 +93,40 @@ export default function DocsPage() {
     }
   }, [loadDocs])
 
-  /* Focus input when modal opens */
+  /* ── Select template → open naming modal ─────────────────── */
+  const selectTemplate = (template: DocumentTemplate) => {
+    setPendingTemplate(template)
+    setDocName('')
+    setTemplatePickerOpen(false)
+  }
+
+  /* Focus the name input when the naming modal opens */
   useEffect(() => {
-    if (modalOpen && inputRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 50)
+    if (pendingTemplate && nameInputRef.current) {
+      setTimeout(() => nameInputRef.current?.focus(), 50)
     }
-  }, [modalOpen])
+  }, [pendingTemplate])
 
-  const openModal = () => {
-    setNewName('')
-    setModalOpen(true)
-  }
-
-  const closeModal = () => {
-    setModalOpen(false)
-    setNewName('')
-  }
-
-  const createDoc = async () => {
-    const name = newName.trim()
-    if (!name) return
+  /* ── Confirm creation with custom name ───────────────────── */
+  const confirmCreate = async () => {
+    if (!pendingTemplate) return
+    const name = docName.trim() || (pendingTemplate.id === 'blank' ? 'Untitled document' : pendingTemplate.name)
 
     try {
       const doc = await documentsApi.create(name)
       setDocs((prev) => [doc, ...prev])
-      closeModal()
-      navigate('/document/' + doc.id)
+      const template = pendingTemplate
+      setPendingTemplate(null)
+      setDocName('')
+      navigate('/document/' + doc.id, { state: { template } })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create document')
     }
+  }
+
+  const closeNamingModal = () => {
+    setPendingTemplate(null)
+    setDocName('')
   }
 
   const deleteDoc = async (id: string) => {
@@ -179,7 +189,7 @@ export default function DocsPage() {
               aria-label="Search documents"
             />
           </div>
-          <button className="new-doc-btn" onClick={openModal} id="create-doc-btn">
+          <button className="new-doc-btn" onClick={() => setTemplatePickerOpen(true)} id="create-doc-btn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
@@ -196,18 +206,42 @@ export default function DocsPage() {
           <div className="docs-loading">Loading documents…</div>
         ) : (
           <>
-            {/* Start new — quick create card */}
+            {/* Start new — template gallery with category tabs */}
             <section className="start-section">
               <p className="section-label">Start a new document</p>
-              <div className="start-grid">
-                <button className="start-card" onClick={openModal} id="start-blank-doc">
-                  <div className="start-card-preview blank-preview">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#5f6368" strokeWidth="1.5">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                    </svg>
-                  </div>
-                  <span>Blank document</span>
-                </button>
+              <div className="template-categories start-categories">
+                {([
+                  { key: 'blank', label: 'Blank' },
+                  { key: 'business', label: 'Business' },
+                  { key: 'personal', label: 'Personal' },
+                  { key: 'education', label: 'Education' },
+                  { key: 'creative', label: 'Creative' },
+                ] as { key: string; label: string }[]).map(({ key, label }) => (
+                  <button
+                    key={key}
+                    className={`template-cat-tab ${startCategory === key ? 'active' : ''}`}
+                    onClick={() => setStartCategory(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="template-row-scroll">
+                {(templatesByCategory[startCategory] || []).map((tpl) => (
+                  <button
+                    key={tpl.id}
+                    className="start-card template-start-card"
+                    onClick={() => selectTemplate(tpl)}
+                    title={tpl.description}
+                  >
+                    <div
+                      className="start-card-preview template-thumb"
+                      style={{ borderTop: `3px solid ${tpl.accent}` }}
+                      dangerouslySetInnerHTML={{ __html: tpl.preview }}
+                    />
+                    <span>{tpl.name}</span>
+                  </button>
+                ))}
               </div>
             </section>
 
@@ -227,7 +261,7 @@ export default function DocsPage() {
                 <h3>{searchQuery ? 'No documents found' : 'No documents yet'}</h3>
                 <p>{searchQuery ? 'Try a different search term.' : 'Create your first document to get started.'}</p>
                 {!searchQuery && (
-                  <button className="new-doc-btn" onClick={openModal}>
+                  <button className="new-doc-btn" onClick={() => setTemplatePickerOpen(true)}>
                     Create document
                   </button>
                 )}
@@ -325,31 +359,43 @@ export default function DocsPage() {
         )}
       </main>
 
-      {/* ── Create document modal ─────────────────────────────── */}
-      {modalOpen && (
-        <div className="modal-overlay" onClick={closeModal} role="dialog" aria-modal="true" aria-label="Create document">
+      {/* ── Template picker ───────────────────────────────────── */}
+      {templatePickerOpen && (
+        <TemplatePicker
+          onSelect={selectTemplate}
+          onClose={() => setTemplatePickerOpen(false)}
+        />
+      )}
+
+      {/* ── Name document modal ───────────────────────────────── */}
+      {pendingTemplate && (
+        <div className="modal-overlay" onClick={closeNamingModal} role="dialog" aria-modal="true" aria-label="Name your document">
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-title">Create new document</h2>
-            <p className="modal-subtitle">Give your document a name to get started.</p>
+            <h2 className="modal-title">Name your document</h2>
+            <p className="modal-subtitle">
+              {pendingTemplate.id === 'blank'
+                ? 'Give your document a name to get started.'
+                : `Starting from the "${pendingTemplate.name}" template.`}
+            </p>
 
             <input
-              ref={inputRef}
+              ref={nameInputRef}
               className="modal-input"
               type="text"
-              placeholder="Untitled document"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') createDoc(); if (e.key === 'Escape') closeModal(); }}
+              placeholder={pendingTemplate.id === 'blank' ? 'Untitled document' : pendingTemplate.name}
+              value={docName}
+              onChange={(e) => setDocName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') confirmCreate(); if (e.key === 'Escape') closeNamingModal(); }}
               maxLength={120}
               aria-label="Document name"
+              autoFocus
             />
 
             <div className="modal-actions">
-              <button className="modal-cancel" onClick={closeModal}>Cancel</button>
+              <button className="modal-cancel" onClick={closeNamingModal}>Cancel</button>
               <button
                 className="modal-create"
-                onClick={createDoc}
-                disabled={!newName.trim()}
+                onClick={confirmCreate}
                 id="confirm-create-doc"
               >
                 Create
