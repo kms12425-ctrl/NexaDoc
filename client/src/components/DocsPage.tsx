@@ -7,6 +7,7 @@ import type { DocumentMeta } from '../types'
 import { templatesByCategory } from '../templates'
 import type { DocumentTemplate } from '../templates'
 import TemplatePicker from './TemplatePicker'
+import TemplateThumbnail from './TemplateThumbnail'
 
 /* ── Friendly relative-time formatter ───────────────────────── */
 function timeAgo(timestamp: number): string {
@@ -238,8 +239,9 @@ export default function DocsPage() {
                     <div
                       className="start-card-preview template-thumb"
                       style={{ borderTop: `3px solid ${tpl.accent}` }}
-                      dangerouslySetInnerHTML={{ __html: tpl.preview }}
-                    />
+                    >
+                      <TemplateThumbnail templateContent={tpl.content} />
+                    </div>
                     <span>{tpl.name}</span>
                   </button>
                 ))}
@@ -286,12 +288,7 @@ export default function DocsPage() {
                           aria-label={`Open document: ${doc.name}`}
                         >
                           <div className="doc-card-preview" style={{ borderTop: `4px solid ${cardColor(doc.id)}` }}>
-                            <div className="doc-lines">
-                              <div className="doc-line" style={{ width: '80%', background: cardColor(doc.id) + '33' }} />
-                              <div className="doc-line" style={{ width: '65%' }} />
-                              <div className="doc-line" style={{ width: '75%' }} />
-                              <div className="doc-line" style={{ width: '50%' }} />
-                            </div>
+                            <TemplateThumbnail html={doc.previewHtml} />
                           </div>
 
                           <div className="doc-card-body">
@@ -335,12 +332,7 @@ export default function DocsPage() {
                           aria-label={`Open document: ${doc.name}`}
                         >
                           <div className="doc-card-preview" style={{ borderTop: `4px solid ${cardColor(doc.id)}` }}>
-                            <div className="doc-lines">
-                              <div className="doc-line" style={{ width: '80%', background: cardColor(doc.id) + '33' }} />
-                              <div className="doc-line" style={{ width: '65%' }} />
-                              <div className="doc-line" style={{ width: '75%' }} />
-                              <div className="doc-line" style={{ width: '50%' }} />
-                            </div>
+                            <TemplateThumbnail html={doc.previewHtml} />
                           </div>
 
                           <div className="doc-card-body">

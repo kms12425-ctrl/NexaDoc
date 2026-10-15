@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { allTemplates, templatesByCategory } from '../templates'
 import type { DocumentTemplate, TemplateCategory } from '../templates'
+import TemplateThumbnail from './TemplateThumbnail'
 
 interface TemplatePickerProps {
   onSelect: (template: DocumentTemplate) => void
@@ -70,8 +71,9 @@ export default function TemplatePicker({ onSelect, onClose }: TemplatePickerProp
               <div
                 className="template-card-preview"
                 style={{ borderTop: `3px solid ${tpl.accent}` }}
-                dangerouslySetInnerHTML={{ __html: tpl.preview }}
-              />
+              >
+                <TemplateThumbnail templateContent={tpl.content} />
+              </div>
               <div className="template-card-info">
                 <span className="template-card-name">{tpl.name}</span>
                 <span className="template-card-desc">{tpl.description}</span>

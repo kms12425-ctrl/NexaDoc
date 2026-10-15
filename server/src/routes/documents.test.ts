@@ -182,3 +182,58 @@ describe('DELETE /api/documents/:docId', () => {
     expect(res.status).toBe(404)
   })
 })
+
+describe('PUT /api/documents/:docId/preview', () => {
+  it('stores preview HTML as owner', async () => {
+    const { token } = await registerUser(app, 'doc-preview-1')
+    const doc = await createDoc(app, token, 'Preview Doc')
+
+    const res = await request(app)
+      .put(`/api/documents/${doc.id}/preview`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ preview: '<p>Hello world</p>' })
+
+    expect(res.status).toBe(200)
+
+    // Verify DB has the preview
+    const db = getDB()
+    const dbDoc = await db.collection<DocumentDoc>('documents').findOne({ docId: doc.id })
+    expect(dbDoc?.previewHtml).toBe('<p>Hello world</p>')
+  })
+
+  it('returns previewHtml in document list', async () => {
+    const { token } = await registerUser(app, 'doc-preview-2')
+    const doc = await createDoc(app, token, 'List Preview Doc')
+
+    await request(app)
+      .put(`/api/documents/${doc.id}/preview`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ preview: '<h1>Title</h1>' })
+
+    const res = await request(app)
+      .get('/api/documents')
+      .set('Authorization', `Bearer ${token}`)
+
+    expect(res.status).toBe(200)
+    const found = res.body.find((d: { id: string }) => d.id === doc.id)
+    expect(found.previewHtml).toBe('<h1>Title</h1>')
+  })
+
+  it('returns 404 for nonexistent document', async () => {
+    const { token } = await registerUser(app, 'doc-preview-3')
+    const res = await request(app)
+      .put('/api/documents/nonexistent/preview')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ preview: '<p>test</p>' })
+
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects request without token', async () => {
+    const res = await request(app)
+      .put('/api/documents/fake/preview')
+      .send({ preview: '<p>test</p>' })
+
+    expect(res.status).toBe(401)
+  })
+})

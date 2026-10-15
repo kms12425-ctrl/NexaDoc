@@ -107,6 +107,12 @@ export const documentsApi = {
     apiFetch<{ status: string }>(`/api/documents/${docId}`, {
       method: 'DELETE',
     }),
+
+  updatePreview: (docId: string, preview: string) =>
+    apiFetch<{ status: string }>(`/api/documents/${docId}/preview`, {
+      method: 'PUT',
+      body: JSON.stringify({ preview }),
+    }),
 }
 
 /* ── Snapshots API ───────────────────────────────────────────── */

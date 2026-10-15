@@ -354,6 +354,49 @@ export default function Editor()
     return () => clearTimeout(timer)
   }, [editor, location.state])
 
+  /* ── Debounce 上传文档预览 HTML ──────────────────────────── */
+  useEffect(() =>
+  {
+    if (!editor || !id) return
+
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const uploadPreview = () =>
+    {
+      const html = editor.getHTML()
+      documentsApi.updatePreview(id!, html).catch(() => { })
+    }
+
+    // 编辑器内容变化时 debounce 1s 上传
+    const handleUpdate = () =>
+    {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(uploadPreview, 1000)
+    }
+
+    editor.on('update', handleUpdate)
+
+    return () =>
+    {
+      editor.off('update', handleUpdate)
+      if (timer) clearTimeout(timer)
+    }
+  }, [editor, id])
+
+  /* ── 连接成功后上传一次预览（确保 Yjs 内容已同步）────────── */
+  useEffect(() =>
+  {
+    if (!editor || !id || !connected) return
+
+    const timer = setTimeout(() =>
+    {
+      const html = editor.getHTML()
+      documentsApi.updatePreview(id!, html).catch(() => { })
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [editor, id, connected])
+
   /* ── 导出 handlers ───────────────────────────────────────── */
   const exportPDF = useCallback(() =>
   {

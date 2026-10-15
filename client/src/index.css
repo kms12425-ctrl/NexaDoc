@@ -594,11 +594,11 @@ a:hover { text-decoration: underline; }
 }
 .start-card-preview {
   width: 100%;
-  height: 80px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--gray-50);
+  overflow: hidden;
 }
 .start-card > span {
   padding-bottom: 10px;
@@ -640,19 +640,48 @@ a:hover { text-decoration: underline; }
 }
 
 .doc-card-preview {
-  height: 120px;
   background: var(--gray-50);
-  padding: 14px;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
+  padding: 8px;
 }
-.doc-lines { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-.doc-line {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--gray-200);
+
+/* ── Thumbnail (208x263, Google Docs style) ─────────────────── */
+.doc-thumbnail {
+  width: 208px;
+  height: 263px;
+  overflow: hidden;
+  background: white;
+  border: 1px solid var(--gray-200);
+  border-radius: 4px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  position: relative;
+}
+
+.doc-thumbnail-content {
+  pointer-events: none;
+  padding: 24px;
+}
+
+.doc-thumbnail-content > :first-child {
+  margin-top: 0;
+}
+
+.doc-thumbnail-content p,
+.doc-thumbnail-content h1,
+.doc-thumbnail-content h2,
+.doc-thumbnail-content h3 {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.doc-thumbnail-placeholder {
+  align-items: center;
+  justify-content: center;
 }
 
 .doc-card-body {
@@ -1570,27 +1599,20 @@ a:hover { text-decoration: underline; }
   background: var(--gray-400);
 }
 
-/* Show 5 cards, scroll for the rest */
+/* Show ~4 cards per row, scroll for the rest */
 .start-card.template-start-card {
-  flex: 0 0 calc((100% - 64px) / 5);
-  min-width: 140px;
-  max-width: 200px;
+  flex: 0 0 230px;
+  max-width: 230px;
 }
 
 .template-thumb {
-  height: 130px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #fafafa;
   border-radius: 4px 4px 0 0;
-}
-
-.template-thumb svg {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  padding: 6px;
 }
 
 .start-card.template-start-card > span {
@@ -1688,7 +1710,7 @@ a:hover { text-decoration: underline; }
 }
 
 .template-card {
-  width: 160px;
+  width: 230px;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--gray-200);
@@ -1707,17 +1729,12 @@ a:hover { text-decoration: underline; }
 }
 
 .template-card-preview {
-  height: 150px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #fafafa;
-}
-
-.template-card-preview svg {
-  width: 100%;
-  height: 100%;
+  padding: 8px;
 }
 
 .template-card-info {

@@ -43,6 +43,7 @@ export interface DocumentDoc
   crdtState: Buffer              // Y.encodeStateAsUpdate(doc) 二进制
   crdtStateSize: number
   updateCount: number
+  previewHtml?: string           // 文档内容 HTML 缩略预览
   createdAt: Date
   updatedAt: Date
 }
