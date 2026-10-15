@@ -33,6 +33,7 @@ router.get('/', async (req: AuthRequest, res: Response) =>
     updatedAt: d.updatedAt.getTime(),
     abilities: getAbilities(Role.OWNER),
     shared: false,
+    previewHtml: d.previewHtml || '',
   }))
 
   // ── 2. Shared documents ──
@@ -64,6 +65,7 @@ router.get('/', async (req: AuthRequest, res: Response) =>
     updatedAt: d.updatedAt.getTime(),
     abilities: getAbilities(roleMap.get(d._id!.toString()) || null),
     shared: true,
+    previewHtml: d.previewHtml || '',
   }))
 
   res.json([...ownedResult, ...sharedResult])
@@ -172,6 +174,36 @@ router.delete('/:docId', async (req: AuthRequest, res: Response) =>
   await db.collection<DocumentDoc>('documents').updateOne(
     { docId: req.params.docId },
     { $set: { deletedAt: new Date() } }
+  )
+  res.json({ status: 'ok' })
+})
+
+/**
+ * PUT /api/documents/:docId/preview — 更新文档预览 HTML（需 canView）
+ */
+router.put('/:docId/preview', async (req: AuthRequest, res: Response) =>
+{
+  const db = getDB()
+  const access = await resolveAccess(req.params.docId as string, req.user!.id)
+  if (!access) {
+    res.status(404).json({ error: 'Document not found' })
+    return
+  }
+  if (!access.abilities.canView) {
+    res.status(403).json({ error: 'Insufficient permissions' })
+    return
+  }
+
+  const preview = typeof req.body.preview === 'string' ? req.body.preview : ''
+  // 限制预览 HTML 体积（100KB）
+  if (Buffer.byteLength(preview, 'utf8') > 100_000) {
+    res.status(413).json({ error: 'Preview HTML too large' })
+    return
+  }
+
+  await db.collection<DocumentDoc>('documents').updateOne(
+    { docId: req.params.docId },
+    { $set: { previewHtml: preview } }
   )
   res.json({ status: 'ok' })
 })

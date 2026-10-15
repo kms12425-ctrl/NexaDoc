@@ -25,6 +25,7 @@ export interface DocumentMeta {
   name: string
   createdAt: number
   updatedAt: number
+  previewHtml?: string             // 文档内容 HTML 缩略预览
   // ── 预留字段（后续阶段启用）──
   parentId?: string | null         // 文档树结构：父文档 ID（阶段六启用）
   deletedAt?: number | null        // 软删除时间戳（阶段六启用）
