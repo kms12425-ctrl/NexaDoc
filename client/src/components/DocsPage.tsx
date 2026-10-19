@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { documentsApi, getNotificationWsUrl } from '../services/api'
@@ -8,32 +8,9 @@ import { templatesByCategory } from '../templates'
 import type { DocumentTemplate } from '../templates'
 import TemplatePicker from './TemplatePicker'
 import TemplateThumbnail from './TemplateThumbnail'
-
-/* ── Friendly relative-time formatter ───────────────────────── */
-function timeAgo(timestamp: number): string {
-  if (!timestamp) return ''
-  const diff = Date.now() - timestamp
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'Just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  return `${days}d ago`
-}
-
-/* ── Document colour palette (used for card accents) ────────── */
-const CARD_COLORS = [
-  '#4285f4', '#ea4335', '#34a853', '#fbbc04',
-  '#ff6d00', '#aa00ff', '#00acc1', '#e91e63',
-]
-
-function cardColor(id: string): string {
-  if (!id) return CARD_COLORS[0]
-  let hash = 0
-  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash)
-  return CARD_COLORS[Math.abs(hash) % CARD_COLORS.length]
-}
+import DocumentCard from './shared/DocumentCard'
+import CreateDocModal from './shared/CreateDocModal'
+import AppMenu from './AppMenu'
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function DocsPage() {
@@ -45,7 +22,6 @@ export default function DocsPage() {
   const [startCategory, setStartCategory] = useState<string>('blank')
   const [pendingTemplate, setPendingTemplate] = useState<DocumentTemplate | null>(null)
   const [docName, setDocName] = useState('')
-  const nameInputRef = useRef<HTMLInputElement>(null)
   const [deleteTarget, setDeleteTarget] = useState<DocumentMeta | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const navigate = useNavigate()
@@ -101,13 +77,6 @@ export default function DocsPage() {
     setTemplatePickerOpen(false)
   }
 
-  /* Focus the name input when the naming modal opens */
-  useEffect(() => {
-    if (pendingTemplate && nameInputRef.current) {
-      setTimeout(() => nameInputRef.current?.focus(), 50)
-    }
-  }, [pendingTemplate])
-
   /* ── Confirm creation with custom name ───────────────────── */
   const confirmCreate = async () => {
     if (!pendingTemplate) return
@@ -141,7 +110,7 @@ export default function DocsPage() {
   }
 
   const filteredDocs = docs.filter((d) =>
-    d.name.toLowerCase().includes(searchQuery.toLowerCase())
+    d.editorType !== 'markdown' && d.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
   const ownedDocs = filteredDocs.filter((d) => !d.shared)
   const sharedDocs = filteredDocs.filter((d) => d.shared)
@@ -151,6 +120,7 @@ export default function DocsPage() {
       {/* ── Header ───────────────────────────────────────────── */}
       <header className="docs-header">
         <div className="docs-brand">
+          <AppMenu current="docs" />
           <svg className="brand-icon-lg" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect width="40" height="40" rx="8" fill="#1a73e8"/>
             <path d="M10 10h14l6 6v14H10V10z" fill="white" opacity="0.9"/>
@@ -279,37 +249,13 @@ export default function DocsPage() {
                     </p>
                     <div className="docs-grid">
                       {ownedDocs.map((doc) => (
-                        <article
+                        <DocumentCard
                           key={doc.id}
-                          className="doc-card"
-                          onClick={() => navigate('/document/' + doc.id)}
-                          tabIndex={0}
-                          onKeyDown={(e) => e.key === 'Enter' && navigate('/document/' + doc.id)}
-                          aria-label={`Open document: ${doc.name}`}
-                        >
-                          <div className="doc-card-preview" style={{ borderTop: `4px solid ${cardColor(doc.id)}` }}>
-                            <TemplateThumbnail html={doc.previewHtml} />
-                          </div>
-
-                          <div className="doc-card-body">
-                            <div className="doc-card-name" title={doc.name}>{doc.name}</div>
-                            <div className="doc-card-meta">
-                              <span className="doc-card-id">{doc.id.slice(0, 12)}…</span>
-                              <span className="doc-card-time">{timeAgo(doc.updatedAt)}</span>
-                            </div>
-                          </div>
-
-                          <button
-                            className="doc-delete-btn"
-                            onClick={(e) => { e.stopPropagation(); setDeleteTarget(doc) }}
-                            title="Delete document"
-                            aria-label={`Delete ${doc.name}`}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
-                            </svg>
-                          </button>
-                        </article>
+                          doc={doc}
+                          preview={<TemplateThumbnail html={doc.previewHtml} />}
+                          onOpen={() => navigate('/document/' + doc.id)}
+                          onDelete={() => setDeleteTarget(doc)}
+                        />
                       ))}
                     </div>
                   </section>
@@ -323,25 +269,13 @@ export default function DocsPage() {
                     </p>
                     <div className="docs-grid">
                       {sharedDocs.map((doc) => (
-                        <article
+                        <DocumentCard
                           key={doc.id}
-                          className="doc-card shared-card"
-                          onClick={() => navigate('/document/' + doc.id)}
-                          tabIndex={0}
-                          onKeyDown={(e) => e.key === 'Enter' && navigate('/document/' + doc.id)}
-                          aria-label={`Open document: ${doc.name}`}
-                        >
-                          <div className="doc-card-preview" style={{ borderTop: `4px solid ${cardColor(doc.id)}` }}>
-                            <TemplateThumbnail html={doc.previewHtml} />
-                          </div>
-
-                          <div className="doc-card-body">
-                            <div className="doc-card-name" title={doc.name}>{doc.name}</div>
-                            <div className="doc-card-meta">
-                              <span className="doc-card-time">{timeAgo(doc.updatedAt)}</span>
-                            </div>
-                          </div>
-                        </article>
+                          doc={doc}
+                          shared
+                          preview={<TemplateThumbnail html={doc.previewHtml} />}
+                          onOpen={() => navigate('/document/' + doc.id)}
+                        />
                       ))}
                     </div>
                   </section>
@@ -362,40 +296,16 @@ export default function DocsPage() {
 
       {/* ── Name document modal ───────────────────────────────── */}
       {pendingTemplate && (
-        <div className="modal-overlay" onClick={closeNamingModal} role="dialog" aria-modal="true" aria-label="Name your document">
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2 className="modal-title">Name your document</h2>
-            <p className="modal-subtitle">
-              {pendingTemplate.id === 'blank'
-                ? 'Give your document a name to get started.'
-                : `Starting from the "${pendingTemplate.name}" template.`}
-            </p>
-
-            <input
-              ref={nameInputRef}
-              className="modal-input"
-              type="text"
-              placeholder={pendingTemplate.id === 'blank' ? 'Untitled document' : pendingTemplate.name}
-              value={docName}
-              onChange={(e) => setDocName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') confirmCreate(); if (e.key === 'Escape') closeNamingModal(); }}
-              maxLength={120}
-              aria-label="Document name"
-              autoFocus
-            />
-
-            <div className="modal-actions">
-              <button className="modal-cancel" onClick={closeNamingModal}>Cancel</button>
-              <button
-                className="modal-create"
-                onClick={confirmCreate}
-                id="confirm-create-doc"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
+        <CreateDocModal
+          value={docName}
+          placeholder={pendingTemplate.id === 'blank' ? 'Untitled document' : pendingTemplate.name}
+          description={pendingTemplate.id === 'blank'
+            ? 'Give your document a name to get started.'
+            : `Starting from the "${pendingTemplate.name}" template.`}
+          onChange={setDocName}
+          onConfirm={confirmCreate}
+          onClose={closeNamingModal}
+        />
       )}
 
       {/* ── Delete confirmation modal ─────────────────────────── */}

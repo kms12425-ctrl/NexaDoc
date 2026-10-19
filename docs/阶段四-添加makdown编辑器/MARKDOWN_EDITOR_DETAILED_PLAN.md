@@ -10,6 +10,7 @@
 > - 明确 Markdown 编辑器 = **左侧源码 + 右侧实时预览**，默认 50/50 分栏。
 > - Markdown 主页 **复用现有 Word/Docs 主页的布局与视觉**（顶部栏、模板区、最近文档网格、搜索、空状态）。
 > - **分享与多人实时编辑移到 P2**；P0 先做单用户编辑器，但保留升级接口、数据字段和迁移方案，P2 不是“以后再说”。
+> - **交互修订（2026-10-19）**：汉堡菜单用于工作区切换及通用入口；新建文档和搜索仅集成于 Markdown 主页，不在菜单中提供快捷项。
 
 ---
 
@@ -119,8 +120,6 @@
 2. 弹出菜单：
    - `Docs`（当前打勾）
    - `Markdown`
-   - `＋ New Markdown document`
-   - `🔍 Search Markdown`
    - `Settings`（P0 占位，disabled）
    - `Help & feedback`
    - 底部：`Privacy Policy · Terms of Service`
@@ -169,7 +168,7 @@
 
 ### 4.6 全文检索
 
-- `/markdown` 顶部搜索框（或菜单 `Search Markdown`）。
+- `/markdown` 顶部搜索框。
 - 输入关键词 300ms 防抖；支持中英文、多个空格分隔关键词（AND 语义）。
 - 结果卡片显示：标题、标签、高亮摘要、更新时间。
 - 点击结果进入对应 Markdown 文档；`Enter` 打开第一条，`Esc` 清空。
@@ -1101,8 +1100,6 @@ const filter = {
 - 行为：
   - `Docs` → `navigate('/')`
   - `Markdown` → `navigate('/markdown')`
-  - `New Markdown document` → `navigate('/markdown?new=1')`
-  - `Search Markdown` → `navigate('/markdown?focusSearch=1')`
   - `Settings` → disabled（P0）
   - `Help & feedback` → 新窗口打开仓库 Issues 或静态页
 - 交互：
@@ -1294,9 +1291,6 @@ P0 至少提供 7 个：
 ├──────────────────────────────┤
 │  📄  Docs                ✓   │
 │  📝  Markdown                │
-├──────────────────────────────┤
-│  ＋  New Markdown document   │
-│  🔍  Search Markdown         │
 ├──────────────────────────────┤
 │  ⚙  Settings                 │
 │  ？ Help & feedback          │
@@ -1779,6 +1773,7 @@ P2 后同一位置会增加：
 
 ### 文档
 
+- C1/C2/C3 实施与测试记录：[C1_C2_C3_IMPLEMENTATION_NOTES.md](./C1_C2_C3_IMPLEMENTATION_NOTES.md)
 - 本计划：`docs/阶段四-添加makdown编辑器/MARKDOWN_EDITOR_DETAILED_PLAN.md`
 - 用户手册：`docs/阶段四-添加makdown编辑器/MARKDOWN_USER_GUIDE.md`
 - API 变更说明：更新 `server/README.md` 或根 `README.md`
