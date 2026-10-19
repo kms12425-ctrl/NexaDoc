@@ -19,12 +19,15 @@ export interface CollabSession {
   destroy: () => void
 }
 
+export type EditorType = 'rich' | 'markdown'
+
 // 文档元数据（localStorage 和后续 API 共用）
 export interface DocumentMeta {
   id: string
   name: string
   createdAt: number
   updatedAt: number
+  editorType?: EditorType          // 缺省为 rich，兼容历史文档
   previewHtml?: string             // 文档内容 HTML 缩略预览
   // ── 预留字段（后续阶段启用）──
   parentId?: string | null         // 文档树结构：父文档 ID（阶段六启用）

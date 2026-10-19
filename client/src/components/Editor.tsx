@@ -14,6 +14,7 @@ import FontFamily from '@tiptap/extension-font-family'
 import Placeholder from '@tiptap/extension-placeholder'
 import { createYjs } from '../services/yjsProvider'
 import { documentsApi, getNotificationWsUrl } from '../services/api'
+import type { DocumentWithAbilities } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import html2pdf from 'html2pdf.js'
 import { saveAs } from 'file-saver'
@@ -26,23 +27,12 @@ import type { DocumentTemplate } from '../templates'
 import VersionHistoryModal from './VersionHistoryModal'
 import ShareModal from './ShareModal'
 import CommentPanel from './CommentPanel'
+import AppMenu from './AppMenu'
 
 /* ─── Word/character counter ─────────────────────────────────── */
 function countWords(text: string): number
 {
   return text.trim() ? text.trim().split(/\s+/).length : 0
-}
-
-/* ─── Read document name from localStorage (fallback only) ─────── */
-function loadDocNameFallback(docId: string): string
-{
-  try {
-    const docs = JSON.parse(localStorage.getItem('docs') || '[]')
-    const doc = docs.find((d: { id: string }) => d.id === docId)
-    return doc?.name || 'Untitled document'
-  } catch {
-    return 'Untitled document'
-  }
 }
 
 /* ─── DOCX export helpers ──────────────────────────────────────── */
@@ -73,19 +63,19 @@ function convertAlignment(align?: string): 'left' | 'center' | 'right' | 'both' 
 }
 
 /* ══════════════════════════════════════════════════════════════ */
-export default function Editor()
+export default function Editor({ metadata }: { metadata: DocumentWithAbilities })
 {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
 
-  // 标题状态——先用 fallback 快速渲染，API 返回后更新
-  const [title, setTitle] = useState(() => loadDocNameFallback(id || ''))
-  const [abilities, setAbilities] = useState<DocumentAbilities>({})
+  // The route has already checked metadata before opening a collaboration session.
+  const [title, setTitle] = useState(metadata.name)
+  const [abilities] = useState<DocumentAbilities>(metadata.abilities)
   const [users, setUsers] = useState<RemoteUserState[]>([])
   const [activeUser, setActiveUser] = useState<string>('')
-  const [mode, setMode] = useState<'edit' | 'view'>('edit')
+  const [mode, setMode] = useState<'edit' | 'view'>(metadata.abilities.canEdit === false ? 'view' : 'edit')
   const [connected, setConnected] = useState(false)
   const [wordCount, setWordCount] = useState(0)
   const [charCount, setCharCount] = useState(0)
@@ -244,29 +234,6 @@ export default function Editor()
     }
     session.provider.awareness.setLocalStateField('docTitle', title)
   }, [title, session])
-
-  /* ── 从 API 获取文档元数据 + 权限 ────────────────────────── */
-  useEffect(() =>
-  {
-    if (!id) return
-    let cancelled = false
-      ; (async () =>
-      {
-        try {
-          const meta = await documentsApi.getMetadata(id)
-          if (!cancelled) {
-            setTitle(meta.name)
-            setAbilities(meta.abilities)
-            if (meta.abilities.canEdit === false) {
-              setMode('view')
-            }
-          }
-        } catch {
-          // 文档不存在或无权限——忽略，fallback 标题已设置
-        }
-      })()
-    return () => { cancelled = true }
-  }, [id])
 
   /* ── 监听权限撤销通知 ─────────────────────────────────── */
   useEffect(() => {
@@ -499,6 +466,7 @@ export default function Editor()
       {/* ── Top navigation bar ─────────────────────────────── */}
       <div className="topbar">
         <div className="topbar-left">
+          <AppMenu current="doc-editor" />
           <button className="back-btn" onClick={() => navigate('/')} title="Back to documents">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M12 19l-7-7 7-7" />

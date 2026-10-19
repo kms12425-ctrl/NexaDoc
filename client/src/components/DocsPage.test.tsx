@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AuthProvider } from '../contexts/AuthContext'
@@ -10,6 +10,12 @@ import { templatesByCategory } from '../templates'
 
 const API_URL = 'http://localhost:3001'
 const server = setupServer()
+
+// This suite exercises document HTTP flows; notification sockets are unrelated.
+vi.mock('../services/api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../services/api')>(),
+  getNotificationWsUrl: () => '',
+}))
 
 function makeJwtToken(payload: object): string {
   const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -26,14 +32,6 @@ function setupAuth() {
 }
 
 beforeAll(() => {
-  // Mock WebSocket to prevent real connections in jsdom
-  vi.stubGlobal('WebSocket', vi.fn(() => ({
-    close: vi.fn(),
-    onmessage: null,
-    onerror: null,
-    onopen: null,
-    onclose: null,
-  })))
   server.listen({ onUnhandledRequest: 'bypass' })
 })
 beforeEach(() => {
@@ -56,6 +54,55 @@ function renderDocsPage() {
 }
 
 describe('DocsPage', () => {
+  it('keeps legacy rich documents visible and excludes Markdown documents', async () => {
+    server.use(http.get(`${API_URL}/api/documents`, () => HttpResponse.json([
+      { id: 'legacy', name: 'Legacy Notes', createdAt: 1, updatedAt: 1, shared: false },
+      { id: 'md', name: 'Markdown Notes', editorType: 'markdown', createdAt: 1, updatedAt: 1, shared: false },
+    ])))
+    renderDocsPage()
+
+    expect(await screen.findByRole('article', { name: 'Open document: Legacy Notes' })).toBeInTheDocument()
+    expect(screen.queryByRole('article', { name: 'Open document: Markdown Notes' })).not.toBeInTheDocument()
+  })
+
+  it('keeps owned and shared cards distinct after extracting the shared component', async () => {
+    server.use(http.get(`${API_URL}/api/documents`, () => HttpResponse.json([
+      { id: 'owned', name: 'My Notes', createdAt: 1, updatedAt: 1, shared: false },
+      { id: 'shared', name: 'Team Notes', createdAt: 1, updatedAt: 1, shared: true },
+    ])))
+    renderDocsPage()
+
+    const owned = await screen.findByRole('article', { name: 'Open document: My Notes' })
+    const shared = screen.getByRole('article', { name: 'Open document: Team Notes' })
+    expect(within(owned).getByRole('button', { name: 'Delete My Notes' })).toBeInTheDocument()
+    expect(within(shared).queryByRole('button')).not.toBeInTheDocument()
+    expect(shared).toHaveClass('shared-card')
+  })
+
+  it('opens deletion confirmation from the keyboard and removes only after confirming', async () => {
+    const user = userEvent.setup()
+    const remove = vi.fn()
+    server.use(
+      http.get(`${API_URL}/api/documents`, () => HttpResponse.json([
+        { id: 'owned', name: 'My Notes', createdAt: 1, updatedAt: 1, shared: false },
+      ])),
+      http.delete(`${API_URL}/api/documents/owned`, () => {
+        remove()
+        return HttpResponse.json({ status: 'ok' })
+      })
+    )
+    renderDocsPage()
+    const deleteButton = await screen.findByRole('button', { name: 'Delete My Notes' })
+    deleteButton.focus()
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByRole('dialog', { name: 'Confirm delete' })).toBeInTheDocument()
+    expect(remove).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(screen.queryByRole('article')).not.toBeInTheDocument())
+    expect(remove).toHaveBeenCalledOnce()
+  })
+
   it('renders document list', async () => {
     server.use(
       http.get(`${API_URL}/api/documents`, () =>
@@ -157,10 +204,9 @@ describe('DocsPage', () => {
 
     // Category tabs are inside .start-categories
     const catContainer = document.querySelector('.start-categories')
+    expect(catContainer).toBeTruthy()
     for (const label of ['Blank', 'Business', 'Personal', 'Education', 'Creative']) {
-      const btn = catContainer?.querySelector(`button`)
-      // Just verify the container has all 5 tab buttons
-      expect(catContainer).toBeTruthy()
+      expect(within(catContainer as HTMLElement).getByRole('button', { name: label })).toBeInTheDocument()
     }
     expect(catContainer?.querySelectorAll('button')).toHaveLength(5)
   })
