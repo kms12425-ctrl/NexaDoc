@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 // C3 browser regressions use isolated API fixtures, without changing the user's database.
 async function mockDocuments(page: Page) {
+  await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, (route) => route.abort())
   const created: Array<{ name: string }> = []
   const deleted: string[] = []
   let documents = [
@@ -17,7 +18,7 @@ async function mockDocuments(page: Page) {
   })
   await page.routeWebSocket('**/ws/notifications**', () => {})
   await page.routeWebSocket('**/yjs/**', () => {})
-  await page.route('**/api/documents', async (route) => {
+  await page.route(/\/api\/documents(?:\?.*)?$/, async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON() as { name: string }
       created.push(body)

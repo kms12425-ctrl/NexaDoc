@@ -32,6 +32,14 @@ export interface UserDoc
 }
 
 // ── 文档 ──
+export type EditorType = 'rich' | 'markdown'
+
+export interface OutgoingLink {
+  title: string
+  label?: string
+  targetDocId: string | null
+}
+
 export interface DocumentDoc
 {
   _id?: ObjectId
@@ -40,6 +48,13 @@ export interface DocumentDoc
   ownerUserId: ObjectId | null
   parentId?: string | null        // 文档树结构（阶段六启用）
   deletedAt?: Date | null         // 软删除时间戳
+  editorType?: EditorType         // 历史数据缺省为 rich
+  tags?: string[]
+  markdown?: string               // P0 Markdown 权威正文
+  searchText?: string
+  outgoingLinks?: OutgoingLink[]
+  markdownIndexedAt?: Date
+  revision?: number               // 缺省为 0
   crdtState: Buffer              // Y.encodeStateAsUpdate(doc) 二进制
   crdtStateSize: number
   updateCount: number

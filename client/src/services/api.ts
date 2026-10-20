@@ -5,6 +5,7 @@ import type {
   DocumentAccess,
   Comment,
   DocumentAbilities,
+  EditorType,
 } from '../types'
 
 // 默认同源（空字符串 → fetch('/api/...') 走当前 origin）：
@@ -85,13 +86,20 @@ export interface DocumentWithAbilities extends DocumentMeta
   shared?: boolean
 }
 
-export const documentsApi = {
-  list: () => apiFetch<DocumentWithAbilities[]>('/api/documents'),
+export interface MarkdownCreateOptions {
+  editorType: 'markdown'
+  markdown: string
+  tags?: string[]
+}
 
-  create: (name: string) =>
+export const documentsApi = {
+  list: (type?: EditorType | 'all') =>
+    apiFetch<DocumentWithAbilities[]>(`/api/documents${type ? `?type=${encodeURIComponent(type)}` : ''}`),
+
+  create: (name: string, options?: MarkdownCreateOptions) =>
     apiFetch<DocumentWithAbilities>('/api/documents', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, ...options }),
     }),
 
   getMetadata: (docId: string) =>

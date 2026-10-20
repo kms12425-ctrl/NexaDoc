@@ -23,6 +23,7 @@ import documentsRouter from './routes/documents'
 import snapshotsRouter from './routes/snapshots'
 import sharingRouter from './routes/sharing'
 import commentsRouter from './routes/comments'
+import markdownRouter from './routes/markdown'
 
 /* ─── Configuration ───────────────────────────────────────────── */
 const PORT = process.env.PORT || 3001
@@ -35,9 +36,10 @@ const app = express()
 app.use(
   cors({
     origin: CLIENT_ORIGIN,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   })
 )
+app.use('/api/documents', express.json({ limit: '3mb' }))
 app.use(express.json())
 
 /* ── Health-check ── */
@@ -56,6 +58,7 @@ app.get('/api/auth/me', requireAuth, (req: AuthRequest, res: Response) =>
 
 /* ── REST API routes ── */
 app.use('/api/documents', requireAuth, documentsRouter)
+app.use('/api/documents', requireAuth, markdownRouter)
 app.use('/api/documents', requireAuth, sharingRouter)
 app.use('/api/documents', requireAuth, commentsRouter)
 app.use('/api/documents', requireAuth, snapshotsRouter)
@@ -222,6 +225,10 @@ server.on('upgrade', (request, socket, head) =>
       {
         if (!access) {
           rejectUpgrade(socket, 404, 'Document Not Found')
+          return
+        }
+        if (access.doc.editorType === 'markdown') {
+          rejectUpgrade(socket, 403, 'Markdown Collaboration Unavailable')
           return
         }
         // 无查看权限 → 拒绝

@@ -1773,7 +1773,11 @@ P2 后同一位置会增加：
 
 ### 文档
 
+- 本轮开发总结：[MARKDOWN_PROGRESS_SUMMARY.md](./MARKDOWN_PROGRESS_SUMMARY.md)
 - C1/C2/C3 实施与测试记录：[C1_C2_C3_IMPLEMENTATION_NOTES.md](./C1_C2_C3_IMPLEMENTATION_NOTES.md)
+- C4/C5 实施与测试记录：[C4_C5_IMPLEMENTATION_NOTES.md](./C4_C5_IMPLEMENTATION_NOTES.md)（主页与 7 个模板已接入真实接口）
+- A1/A2/A3 实施与测试记录：[A1_A2_A3_IMPLEMENTATION_NOTES.md](./A1_A2_A3_IMPLEMENTATION_NOTES.md)（模型、幂等索引/可选迁移、创建、列表、元数据及 P0 权限）
+- B1/B2/B3 实施与测试记录：[B1_B2_B3_IMPLEMENTATION_NOTES.md](./B1_B2_B3_IMPLEMENTATION_NOTES.md)（源码、会话、预览及必要的正文读写接口；含真实编辑/草稿/冲突测试）
 - 本计划：`docs/阶段四-添加makdown编辑器/MARKDOWN_EDITOR_DETAILED_PLAN.md`
 - 用户手册：`docs/阶段四-添加makdown编辑器/MARKDOWN_USER_GUIDE.md`
 - API 变更说明：更新 `server/README.md` 或根 `README.md`

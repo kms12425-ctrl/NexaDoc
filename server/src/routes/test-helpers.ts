@@ -5,6 +5,7 @@ import { getDB } from '../db'
 import documentsRouter from './documents'
 import sharingRouter from './sharing'
 import commentsRouter from './comments'
+import markdownRouter from './markdown'
 import snapshotsRouter from './snapshots'
 import type { DocumentDoc } from '../types'
 import { ObjectId } from 'mongodb'
@@ -15,6 +16,7 @@ import { generateDocId } from '../docId'
  */
 export function createTestApp(): Express {
   const app = express()
+  app.use('/api/documents', express.json({ limit: '3mb' }))
   app.use(express.json())
   app.post('/api/auth/register', register)
   app.post('/api/auth/login', login)
@@ -22,6 +24,7 @@ export function createTestApp(): Express {
     res.json({ user: req.user })
   })
   app.use('/api/documents', requireAuth, documentsRouter)
+  app.use('/api/documents', requireAuth, markdownRouter)
   app.use('/api/documents', requireAuth, sharingRouter)
   app.use('/api/documents', requireAuth, commentsRouter)
   app.use('/api/documents', requireAuth, snapshotsRouter)

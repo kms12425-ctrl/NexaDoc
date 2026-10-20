@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import type { DocumentWithAbilities } from '../src/services/api'
 
 async function mockWorkspace(page: Page, options: { authenticated?: boolean; metadataGate?: Promise<void> } = {}) {
+  await page.route(/^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//, (route) => route.abort())
   const rich: DocumentWithAbilities = {
     id: 'rich-note', name: 'Rich note', createdAt: 1, updatedAt: 1,
     editorType: 'rich', abilities: { canView: true, canEdit: true },
@@ -22,7 +23,7 @@ async function mockWorkspace(page: Page, options: { authenticated?: boolean; met
   }
   await page.routeWebSocket('**/ws/notifications**', () => {})
   await page.routeWebSocket('**/yjs/**', (socket) => { sockets.push(socket.url()) })
-  await page.route('**/api/documents', (route) => route.fulfill({ json: [
+  await page.route(/\/api\/documents(?:\?.*)?$/, (route) => route.fulfill({ json: [
     { ...rich, shared: false },
     { ...metadata['legacy-note'], shared: false },
     { ...metadata['md-note'], shared: false },
@@ -40,6 +41,7 @@ async function mockWorkspace(page: Page, options: { authenticated?: boolean; met
       : { status: 404, json: { error: 'Document not found' } })
   })
   await page.route('**/api/documents/*/preview', (route) => route.fulfill({ json: { status: 'ok' } }))
+  await page.route('**/api/documents/*/markdown', (route) => route.fulfill({ json: { markdown: '# Markdown note', revision: 0, updatedAt: 1 } }))
   return { rich, metadata, sockets, metadataRequests }
 }
 
@@ -68,9 +70,10 @@ test.describe('Workspace navigation', () => {
     await expect(page.getByRole('menuitem', { name: 'New Markdown document' })).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath('markdown-menu.png') })
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('searchbox', { name: 'Search Markdown' })).toHaveAttribute('readonly', '')
-    await expect(page.getByRole('button', { name: 'New document' })).toBeDisabled()
-    await page.getByRole('link', { name: 'Open Docs' }).click()
+    await expect(page.getByRole('searchbox', { name: 'Search Markdown' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'New document' })).toBeEnabled()
+    await page.getByRole('button', { name: 'Open app menu' }).click()
+    await page.getByRole('menuitemradio', { name: 'Docs', exact: true }).click()
     await expect(page).toHaveURL(/\/$/)
   })
 
@@ -86,7 +89,7 @@ test.describe('Workspace navigation', () => {
     })
   }
 
-  test('redirects Markdown to its editor shell without opening a Yjs room', async ({ page }) => {
+  test('redirects Markdown to its source editor without opening a Yjs room', async ({ page }) => {
     const { sockets } = await mockWorkspace(page)
     await page.goto('/document/md-note?from=search#heading')
 

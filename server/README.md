@@ -2,6 +2,15 @@
 
 > Node.js + Express + Socket.IO backend for the NexaDoc editor.
 
+> **2026-10-20 更新：Markdown A1/A2/A3 已实现。** 当前 TypeScript 服务位于 `src/server.ts`，使用 MongoDB 和 Yjs；下方部分说明保留了旧版 Socket.IO 架构。Markdown 接口及测试说明见 [A1/A2/A3 实施记录](../docs/阶段四-添加makdown编辑器/A1_A2_A3_IMPLEMENTATION_NOTES.md)。
+>
+> - `POST /api/documents` 支持 `editorType: "markdown"`、`markdown`、`tags`，缺省类型为 rich。
+> - `GET /api/documents?type=rich|markdown|all` 和 `GET /api/documents/:id/metadata` 返回类型、标签和修订号；Markdown P0 仅 owner 可访问。
+> - Markdown 正文最大 2 MiB，创建时 `revision: 0`；已提供 `GET/PUT /api/documents/:id/markdown`，PUT 携带 baseRevision，冲突返回 409。
+> - B1/B2/B3 已接入源码编辑、实时预览、自动保存与草稿恢复，详见 [编辑器实施记录](../docs/阶段四-添加makdown编辑器/B1_B2_B3_IMPLEMENTATION_NOTES.md)。
+> - 启动自动确保索引；历史数据无需批量迁移。可选 `npm run migrate:markdown` 只补缺失的类型/标签/修订号，执行前确认 `MONGO_URI`、`DB_NAME`。
+> - 开发：`npm run dev`；检查：`npm run typecheck`、`npm test`；生产：`npm run build`、`npm start`。
+
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)
 ![Express](https://img.shields.io/badge/Express-5-000000?logo=express&logoColor=white)
 ![Socket.IO](https://img.shields.io/badge/Socket.IO-4-010101?logo=socket.io&logoColor=white)
