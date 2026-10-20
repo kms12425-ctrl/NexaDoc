@@ -52,7 +52,5 @@
 
 ## 详细记录
 
-- [C4/C5 实施与测试记录](./C4_C5_IMPLEMENTATION_NOTES.md)
-- [A1/A2/A3 实施与测试记录](./A1_A2_A3_IMPLEMENTATION_NOTES.md)
-- [B1/B2/B3 实施与测试记录](./B1_B2_B3_IMPLEMENTATION_NOTES.md)
+- [统一实施与测试记录（C1–C5、A1–A3、B1–B3 及配套正文接口）](./MARKDOWN_IMPLEMENTATION_NOTES.md)
 - [阶段四详细计划](./MARKDOWN_EDITOR_DETAILED_PLAN.md)
