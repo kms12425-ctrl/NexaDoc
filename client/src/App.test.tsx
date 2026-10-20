@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { DocumentWithAbilities } from './services/api'
@@ -17,6 +17,11 @@ vi.mock('./services/api', async (importOriginal) => {
   }
 })
 vi.mock('./components/DocsPage', () => ({ default: () => <h1>Docs workspace</h1> }))
+// Route tests exercise the metadata guard; body loading is covered by editor/session tests.
+vi.mock('./markdown/contentApi', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./markdown/contentApi')>(),
+  createMarkdownTransport: () => ({ load: () => new Promise(() => {}), save: vi.fn() }),
+}))
 vi.mock('./components/Editor', () => ({
   default: ({ metadata }: { metadata: DocumentWithAbilities }) => {
     mountEditor(metadata)
@@ -43,8 +48,10 @@ function renderAt(path: string, authenticated = true) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.stubEnv('VITE_MARKDOWN_API_ENABLED', 'false')
   getMetadata.mockResolvedValue(rich)
 })
+afterEach(() => vi.unstubAllEnvs())
 
 describe('workspace routes', () => {
   it.each(['/markdown', '/markdown/md-note'])('requires login for %s', async (path) => {
@@ -61,7 +68,8 @@ describe('workspace routes', () => {
 
     expect(await screen.findByRole('heading', { name: 'Your Markdown workspace' })).toBeInTheDocument()
     expect(getMetadata).not.toHaveBeenCalled()
-    expect(screen.getByText('Markdown documents and editing will be available soon.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Start a new document' })).toBeInTheDocument()
+    expect(screen.getByText('Markdown document creation and storage are not available yet. You can explore the templates below.')).toBeInTheDocument()
   })
 
   it('keeps document actions on the Markdown home page and workspace switching in the menu', async () => {
@@ -69,7 +77,7 @@ describe('workspace routes', () => {
     renderAt('/markdown')
     const search = await screen.findByRole('searchbox', { name: 'Search Markdown' })
     expect(search).toHaveAttribute('readonly')
-    expect(screen.getByRole('button', { name: 'New document' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'New document' })).toBeEnabled()
     await user.click(screen.getByRole('button', { name: 'Open app menu' }))
     expect(screen.queryByRole('menuitem', { name: 'New Markdown document' })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Search Markdown' })).not.toBeInTheDocument()

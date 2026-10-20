@@ -29,7 +29,7 @@ export default function DocsPage() {
   /* ── Fetch documents from API ─────────────────────────────── */
   const loadDocs = useCallback(async () => {
     try {
-      const result = await documentsApi.list()
+      const result = await documentsApi.list('rich')
       setDocs(result)
       setError('')
     } catch (err) {

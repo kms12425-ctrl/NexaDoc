@@ -55,14 +55,18 @@ function renderDocsPage() {
 
 describe('DocsPage', () => {
   it('keeps legacy rich documents visible and excludes Markdown documents', async () => {
-    server.use(http.get(`${API_URL}/api/documents`, () => HttpResponse.json([
+    let type: string | null = null
+    server.use(http.get(`${API_URL}/api/documents`, ({ request }) => {
+      type = new URL(request.url).searchParams.get('type')
+      return HttpResponse.json([
       { id: 'legacy', name: 'Legacy Notes', createdAt: 1, updatedAt: 1, shared: false },
       { id: 'md', name: 'Markdown Notes', editorType: 'markdown', createdAt: 1, updatedAt: 1, shared: false },
-    ])))
+    ]) }))
     renderDocsPage()
 
     expect(await screen.findByRole('article', { name: 'Open document: Legacy Notes' })).toBeInTheDocument()
     expect(screen.queryByRole('article', { name: 'Open document: Markdown Notes' })).not.toBeInTheDocument()
+    expect(type).toBe('rich')
   })
 
   it('keeps owned and shared cards distinct after extracting the shared component', async () => {

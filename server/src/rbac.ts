@@ -75,6 +75,13 @@ export interface ResolvedAccess
   abilities: ReturnType<typeof getAbilities>
 }
 
+/** Markdown P0 has no share, comments or rich-text history capabilities. */
+export function getDocumentAbilities(doc: DocumentDoc, role: Role | null): ReturnType<typeof getAbilities> {
+  if (doc.editorType !== 'markdown') return getAbilities(role)
+  const owner = role === Role.OWNER
+  return { canView: owner, canEdit: owner, canDelete: owner, canShare: false, canComment: false, canViewHistory: false }
+}
+
 /**
  * 唯一的权限判定入口。
  *
@@ -95,6 +102,12 @@ export async function resolveAccess(
     .findOne({ docId, deletedAt: null })
   if (!doc) return null
 
+  // Do not apply the rich editor's default link role or legacy invitations to Markdown.
+  if (doc.editorType === 'markdown') {
+    if (!userId || doc.ownerUserId?.toString() !== userId) return null
+    return { doc, role: Role.OWNER, abilities: getDocumentAbilities(doc, Role.OWNER) }
+  }
+
   let role: Role | null = null
 
   if (userId && doc.ownerUserId?.toString() === userId) {
@@ -111,5 +124,5 @@ export async function resolveAccess(
     if (!role) role = userId ? DEFAULT_LINK_ROLE : null
   }
 
-  return { doc, role, abilities: getAbilities(role) }
+  return { doc, role, abilities: getDocumentAbilities(doc, role) }
 }

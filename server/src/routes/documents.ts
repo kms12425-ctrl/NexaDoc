@@ -1,12 +1,16 @@
 import { Router, Request, Response } from 'express'
-import { ObjectId } from 'mongodb'
+import { ObjectId, type Filter } from 'mongodb'
 import { getDB } from '../db'
 import { AuthRequest } from '../auth'
-import { getAbilities, resolveAccess, Role } from '../rbac'
+import { getAbilities, getDocumentAbilities, resolveAccess, Role } from '../rbac'
 import { generateDocId } from '../docId'
 import type { DocumentAccessDoc, DocumentDoc } from '../types'
+import { MAX_MARKDOWN_BYTES, normalizeTags, serializeDocument } from '../markdown/metadata'
+import { initialSearchText } from '../markdown/initialSearchText'
+import { restrictMarkdownRoutes } from '../markdown/restrictRoutes'
 
 const router = Router()
+router.use('/:docId', restrictMarkdownRoutes)
 
 /**
  * GET /api/documents — 列出当前用户的文档（排除软删除）
@@ -15,23 +19,29 @@ router.get('/', async (req: AuthRequest, res: Response) =>
 {
   const db = getDB()
   const userId = new ObjectId(req.user!.id)
+  const type = req.query.type ?? 'all'
+  if ((type !== 'rich' && type !== 'markdown' && type !== 'all') || Object.keys(req.query).some((key) => key.startsWith('type['))) {
+    res.status(400).json({ error: 'Invalid document type' })
+    return
+  }
+  const typeFilter: Filter<DocumentDoc> = type === 'markdown'
+    ? { editorType: 'markdown' }
+    : type === 'rich' ? { editorType: { $ne: 'markdown' } } : {}
+  const listProjection = { crdtState: 0, markdown: 0, searchText: 0, outgoingLinks: 0 }
 
   // ── 1. Owned documents ──
   const ownedDocs = await db
     .collection<DocumentDoc>('documents')
     .find(
-      { ownerUserId: userId, deletedAt: null },
-      { projection: { crdtState: 0 } }
+      { ownerUserId: userId, deletedAt: null, ...typeFilter },
+      { projection: listProjection }
     )
     .sort({ updatedAt: -1 })
     .toArray()
 
   const ownedResult = ownedDocs.map((d) => ({
-    id: d.docId,
-    name: d.title,
-    createdAt: d.createdAt.getTime(),
-    updatedAt: d.updatedAt.getTime(),
-    abilities: getAbilities(Role.OWNER),
+    ...serializeDocument(d),
+    abilities: getDocumentAbilities(d, Role.OWNER),
     shared: false,
     previewHtml: d.previewHtml || '',
   }))
@@ -47,28 +57,25 @@ router.get('/', async (req: AuthRequest, res: Response) =>
     accessRecords.map((a) => [a.documentId.toString(), a.role as Role])
   )
 
-  const sharedDocs = docIds.length > 0
+  const sharedDocs = type !== 'markdown' && docIds.length > 0
     ? await db
       .collection<DocumentDoc>('documents')
       .find(
-        { _id: { $in: docIds }, deletedAt: null },
-        { projection: { crdtState: 0 } }
+        { _id: { $in: docIds }, deletedAt: null, editorType: { $ne: 'markdown' } },
+        { projection: listProjection }
       )
       .sort({ updatedAt: -1 })
       .toArray()
     : []
 
   const sharedResult = sharedDocs.map((d) => ({
-    id: d.docId,
-    name: d.title,
-    createdAt: d.createdAt.getTime(),
-    updatedAt: d.updatedAt.getTime(),
-    abilities: getAbilities(roleMap.get(d._id!.toString()) || null),
+    ...serializeDocument(d),
+    abilities: getDocumentAbilities(d, roleMap.get(d._id!.toString()) || null),
     shared: true,
     previewHtml: d.previewHtml || '',
   }))
 
-  res.json([...ownedResult, ...sharedResult])
+  res.json([...ownedResult, ...sharedResult].sort((a, b) => b.updatedAt - a.updatedAt))
 })
 
 /**
@@ -77,29 +84,52 @@ router.get('/', async (req: AuthRequest, res: Response) =>
 router.post('/', async (req: AuthRequest, res: Response) =>
 {
   const db = getDB()
-  const name = (req.body.name || 'Untitled Document').trim()
+  const body = req.body ?? {}
+  const editorType = body.editorType === undefined ? 'rich' : body.editorType
+  if (editorType !== 'rich' && editorType !== 'markdown') {
+    res.status(400).json({ error: 'Invalid editorType' })
+    return
+  }
+  if (body.name !== undefined && typeof body.name !== 'string') {
+    res.status(400).json({ error: 'Name must be a string' })
+    return
+  }
+  const name = body.name?.trim() || 'Untitled Document'
+  if (editorType === 'markdown' && body.markdown !== undefined && typeof body.markdown !== 'string') {
+    res.status(400).json({ error: 'Markdown content must be a string' })
+    return
+  }
+  const markdown = editorType === 'markdown' ? body.markdown ?? '' : undefined
+  if (markdown !== undefined && Buffer.byteLength(markdown, 'utf8') > MAX_MARKDOWN_BYTES) {
+    res.status(400).json({ error: 'Markdown content too large' })
+    return
+  }
   // docId 必须 ASCII 安全（要拼进 WebSocket 路径），见 docId.ts 的说明
   const docId = generateDocId(name)
   const now = new Date()
 
-  const result = await db.collection<DocumentDoc>('documents').insertOne({
+  const doc: DocumentDoc = {
     docId,
     title: name,
     ownerUserId: new ObjectId(req.user!.id),
     deletedAt: null,
+    editorType,
+    tags: normalizeTags(body.tags),
+    revision: 0,
+    ...(markdown !== undefined ? {
+      markdown, searchText: initialSearchText(markdown), outgoingLinks: [], markdownIndexedAt: now,
+    } : {}),
     crdtState: Buffer.alloc(0),
     crdtStateSize: 0,
     updateCount: 0,
     createdAt: now,
     updatedAt: now,
-  })
+  }
+  await db.collection<DocumentDoc>('documents').insertOne(doc)
 
   res.status(201).json({
-    id: docId,
-    name,
-    createdAt: now.getTime(),
-    updatedAt: now.getTime(),
-    abilities: getAbilities(Role.OWNER),
+    ...serializeDocument(doc),
+    abilities: getDocumentAbilities(doc, Role.OWNER),
   })
 })
 
@@ -116,10 +146,7 @@ router.get('/:docId/metadata', async (req: AuthRequest, res: Response) =>
 
   const { doc, abilities } = access
   res.json({
-    id: doc.docId,
-    name: doc.title,
-    createdAt: doc.createdAt.getTime(),
-    updatedAt: doc.updatedAt.getTime(),
+    ...serializeDocument(doc),
     abilities,
   })
 })

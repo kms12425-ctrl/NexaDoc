@@ -6,6 +6,7 @@
     "dev": "ts-node src/server.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
+    "migrate:markdown": "ts-node src/scripts/migrate-markdown-fields.ts",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest",

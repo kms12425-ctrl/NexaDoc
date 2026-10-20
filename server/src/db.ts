@@ -10,6 +10,16 @@ const DEFAULT_DB_NAME = 'nexadoc'
 let dbInstance: Db | null = null
 let clientInstance: MongoClient | null = null
 
+/** Safe to run repeatedly, including against a database created before Markdown support. */
+export async function ensureMarkdownIndexes(db: Db): Promise<void> {
+  await Promise.all([
+    db.collection('documents').createIndex({ editorType: 1, updatedAt: -1 }),
+    db.collection('documents').createIndex({ ownerUserId: 1, editorType: 1, updatedAt: -1 }),
+    db.collection('documents').createIndex({ tags: 1 }),
+    db.collection('documents').createIndex({ 'outgoingLinks.targetDocId': 1 }),
+  ])
+}
+
 export async function connectDB(): Promise<Db>
 {
   if (dbInstance) return dbInstance
@@ -37,6 +47,7 @@ export async function connectDB(): Promise<Db>
     ),
     dbInstance.collection('snapshots').createIndex({ documentId: 1, createdAt: -1 }),
     dbInstance.collection('comments').createIndex({ documentId: 1, createdAt: -1 }),
+    ensureMarkdownIndexes(dbInstance),
   ])
 
   console.log(`[db] MongoDB connected: ${dbName}`)

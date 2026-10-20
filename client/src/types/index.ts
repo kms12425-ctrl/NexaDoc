@@ -21,6 +21,26 @@ export interface CollabSession {
 
 export type EditorType = 'rich' | 'markdown'
 
+export interface MarkdownDocumentPayload {
+  markdown: string
+  revision: number
+  updatedAt: number
+}
+
+export type MarkdownSaveStatus = 'idle' | 'saving' | 'saved' | 'offline' | 'conflict'
+
+export interface SearchResult {
+  id: string
+  name: string
+  editorType: EditorType
+  tags: string[]
+  snippet: string
+  highlights: Array<{ start: number; length: number }>
+  updatedAt: number
+  shared: boolean
+  abilities: DocumentAbilities
+}
+
 // 文档元数据（localStorage 和后续 API 共用）
 export interface DocumentMeta {
   id: string
@@ -28,6 +48,9 @@ export interface DocumentMeta {
   createdAt: number
   updatedAt: number
   editorType?: EditorType          // 缺省为 rich，兼容历史文档
+  tags?: string[]
+  revision?: number
+  snippet?: string                // 可选纯文本摘要，由 Markdown 列表或搜索接口提供
   previewHtml?: string             // 文档内容 HTML 缩略预览
   // ── 预留字段（后续阶段启用）──
   parentId?: string | null         // 文档树结构：父文档 ID（阶段六启用）
