@@ -1555,17 +1555,17 @@ P2-G0/G1/G2/G3 仍分别对应契约/配置确认、分享可用、协作可用�
 | 17 | B2 | MarkdownSession、自动保存与草稿恢复 | 已完成 | 1.5 | B1、A5 | 800ms 保存、300ms 草稿节流、离线/退出处理、显式冲突选择。 |
 | 18 | B3 | 安全实时预览、GFM 与 remarkWikiLink | 已完成 | 1.0 | B1 | 标题/列表/表格/任务/代码/双链；80ms 更新；不执行原始 HTML。 |
 | 19 | B8 | 路由守卫、保存状态与只读准备 | 已完成 | 0.5 | C2、B1、B2 | 已由 C2 和 B1/B2 交付；P2 的共享只读协作另行验收。 |
-| 20 | B4 | Source/Split/Preview 三态、滚动同步、状态栏 | 已完成（Vitest 未跑完） | 1.0 | B2、B3 | 完成人：Fang。三态布局、按滚动比例同步、字数/字符/行数及保存状态栏已接入；窄屏 Split 回退为单栏。服务端 typecheck 通过；Vitest 启动内存 MongoDB 时无输出，未完成运行。 |
+| 20 | B4 | Source/Split/Preview 三态、滚动同步、状态栏 | 已完成（Vitest 未跑完） | 1.0 | B2、B3 | 完成人：Fang。三态布局、按滚动比例同步、字数/字符/行数及保存状态栏已接入；窄屏 Split 回退为单栏。|
 | 21 | B5 | 格式工具栏、快捷键与插入逻辑 | 已完成 | 1.0 | B1 | 完成人：Fang。标题、强调、代码、引用、列表、任务、链接、双链和表格插入工具栏已实现；保留 Ctrl/Cmd+S 与 CodeMirror 默认键。 |
 | 22 | A4 | 标签规范化与 PATCH metadata 替换 | 已完成 | 0.5 | A3 | 完成人：Fang。PATCH 支持标题/标签独立或组合更新；服务端规范化、去重、上限及权限检查生效，并补充路由测试。 |
 | 23 | B7 | 标签编辑、标题保存与冲突 UI | 已完成 | 1.0 | A4、B2 | 完成人：Fang。编辑器中可改标题、增删标签；原有 revision 冲突 UI 保持。 |
 | 24 | A9 | 标签统计与双链标题建议接口 | 已完成 | 1.0 | A3、A4 | 完成人：Fang。GET /api/tags 与 GET /api/documents/suggest 已实现为 P0 owner-only，含统计和前缀优先建议测试。 |
 | 25 | B6 | 双链自动补全 | 已完成 | 1.0 | A9、B1 | 完成人：Fang。CodeMirror 在 [[ 后提供标题建议，选择后插入 [[标题]]；30 秒缓存，失败静默。 |
-| 26 | C7 | TagEditor 与 TagFilter 接入 | 已完成（客户端检查未运行） | 1.0 | A4、A9、C4 | 完成人：Fang。编辑器支持标签增删；主页读取统计、URL `?tag=` 筛选并显示 chips。客户端 node_modules 未安装，typecheck/test 尚未运行。 |
-| 27 | A7 | 全文搜索接口 | 已完成（Vitest 未跑完） | 1.5 | A5、A6 | 完成人：Fang。GET /api/search 支持关键词/标签、owner-only、更新时间与相关性排序、摘要及高亮区间；服务端 typecheck 通过，Vitest 未跑完。 |
-| 28 | C6 | 全文搜索 UI | 已完成（客户端检查未运行） | 1.0 | A7、C4 | 完成人：Fang。主页搜索改为 180ms 防抖服务端检索，保留 URL q、Escape 与空状态。客户端 node_modules 未安装，typecheck/test 尚未运行。 |
-| 29 | A8 | 出链/反链 API、目标与改名处理 | 已完成（Vitest 未跑完） | 1.5 | A6、A5 | 完成人：Fang。GET /api/documents/:docId/links 返回出链与反链；链接按 docId 解析，目标改名后仍可导航。服务端 typecheck 通过，Vitest 未跑完。 |
-| 30 | C8 | BacklinksPanel 与出链/未解析跳转 | 已完成（客户端检查未运行） | 1.0 | A8、B3 | 完成人：Fang。编辑器显示出链、反链及未解析项；已解析项目可跳转 Markdown 页面。客户端 node_modules 未安装，typecheck/test 尚未运行。 |
+| 26 | C7 | TagEditor 与 TagFilter 接入 | 已完成 | 1.0 | A4、A9、C4 | 完成人：Fang。编辑器支持标签增删；主页读取统计、URL `?tag=` 筛选并显示 chips。 |
+| 27 | A7 | 全文搜索接口 | 已完成 | 1.5 | A5、A6 | 完成人：Fang。GET /api/search 支持关键词/标签、owner-only、更新时间与相关性排序、摘要及高亮区间。 |
+| 28 | C6 | 全文搜索 UI | 已完成 | 1.0 | A7、C4 | 完成人：Fang。主页搜索改为 180ms 防抖服务端检索，保留 URL q、Escape 与空状态。 |
+| 29 | A8 | 出链/反链 API、目标与改名处理 | 已完成 | 1.5 | A6、A5 | 完成人：Fang。GET /api/documents/:docId/links 返回出链与反链；链接按 docId 解析，目标改名后仍可导航。 |
+| 30 | C8 | BacklinksPanel 与出链/未解析跳转 | 已完成 | 1.0 | A8、B3 | 完成人：Fang。编辑器显示出链、反链及未解析项；已解析项目可跳转 Markdown 页面。 |
 | 31 | C9 | 导出 Markdown 与 HTML | 未完成 | 0.5 | B2、B3 | 使用最新未保存源码；文件名安全，HTML 不执行脚本。 |
 | 32 | C10 | 导出 PDF 与 DOCX | 未完成 | 1.5 | C9 | 文件可打开，基础语法正确，记录已知降级。 |
 | 33 | C11 | ExportMenu 及 P0 能力显隐整合 | 未完成 | 0.5 | C9、C10 | Share/Comments/History 已隐藏；导出菜单与权限整合待补。 |

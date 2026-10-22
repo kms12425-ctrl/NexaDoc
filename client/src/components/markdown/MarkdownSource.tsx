@@ -4,10 +4,25 @@ import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { markdown } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
-import { autocompletion, type CompletionContext } from '@codemirror/autocomplete'
+import { autocompletion, startCompletion, type CompletionContext } from '@codemirror/autocomplete'
 import type { MarkdownSession } from '../../markdown/session/MarkdownSession'
 
-export interface MarkdownSourceHandle { insert(text: string): void; getScroller(): HTMLElement | null }
+export interface MarkdownSourceHandle {
+  insert(text: string): void
+  wrap(prefix: string, suffix?: string): void
+  getScroller(): HTMLElement | null
+}
+
+function wrapSelection(view: EditorView, prefix: string, suffix = prefix): boolean {
+  const { from, to } = view.state.selection.main
+  const selected = view.state.sliceDoc(from, to)
+  view.dispatch({
+    changes: { from, to, insert: `${prefix}${selected}${suffix}` },
+    selection: { anchor: from + prefix.length, head: from + prefix.length + selected.length },
+  })
+  view.focus()
+  return true
+}
 
 const MarkdownSource = forwardRef<MarkdownSourceHandle, { session: MarkdownSession; readOnly?: boolean; suggest?: (query: string) => Promise<Array<{ title: string; editorType: string }>> }>(function MarkdownSource({ session, readOnly = false, suggest }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -20,6 +35,10 @@ const MarkdownSource = forwardRef<MarkdownSourceHandle, { session: MarkdownSessi
       const { from, to } = view.state.selection.main
       view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } })
       view.focus()
+    },
+    wrap(prefix, suffix) {
+      const view = viewRef.current; if (!view) return
+      wrapSelection(view, prefix, suffix)
     },
     getScroller: () => viewRef.current?.scrollDOM ?? null,
   }), [])
@@ -35,7 +54,13 @@ const MarkdownSource = forwardRef<MarkdownSourceHandle, { session: MarkdownSessi
         const cached = suggestionsRef.current.get(query)
         const options = cached && cached.expires > Date.now() ? cached.items : await suggest(query)
         if (!cached || cached.expires <= Date.now()) suggestionsRef.current.set(query, { expires: Date.now() + 30_000, items: options })
-        return { from: match.from + 2, options: options.map((item) => ({ label: item.title, detail: item.editorType === 'markdown' ? 'Markdown' : 'Rich text', apply: `[[${item.title}]]` })) }
+        return {
+          // Keep the `[[` trigger in the document.  Replacing it as part of the
+          // completion would duplicate it when an option is selected.
+          from: match.from + 2,
+          validFor: /^[^|\]\n]*$/,
+          options: options.map((item) => ({ label: item.title, detail: item.editorType === 'markdown' ? 'Markdown' : 'Rich text', apply: `${item.title}]]` })),
+        }
       } catch { return null }
     }
     let replacing = false
@@ -51,7 +76,11 @@ const MarkdownSource = forwardRef<MarkdownSourceHandle, { session: MarkdownSessi
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ 'aria-label': 'Markdown source', 'aria-multiline': 'true' }),
           editable.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
-          keymap.of([{ key: 'Mod-s', run: () => { void session.saveNow(); return true } }]),
+          keymap.of([
+            { key: 'Mod-s', run: () => { void session.saveNow(); return true } },
+            { key: 'Mod-b', run: (view) => wrapSelection(view, '**') },
+            { key: 'Mod-i', run: (view) => wrapSelection(view, '*') },
+          ]),
           EditorView.domEventHandlers({
             compositionstart: () => { clearTimeout(compositionEndTimer); session.setComposing?.(true) },
             compositionend: () => {
@@ -60,7 +89,12 @@ const MarkdownSource = forwardRef<MarkdownSourceHandle, { session: MarkdownSessi
             },
           }),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged && !replacing) session.update(update.state.doc.toString())
+            if (update.docChanged && !replacing) {
+              session.update(update.state.doc.toString())
+              const { from, to } = update.state.selection.main
+              const beforeCursor = update.state.sliceDoc(0, from)
+              if (from === to && /\[\[[^\]|\n]*$/.test(beforeCursor)) startCompletion(update.view)
+            }
           }),
         ],
       }),

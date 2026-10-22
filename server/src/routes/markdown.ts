@@ -37,7 +37,7 @@ router.put('/:docId/markdown', async (req: AuthRequest, res) => {
   const revisionFilter: Filter<DocumentDoc> = baseRevision === 0
     ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] } : { revision: baseRevision }
   const analysis = analyzeMarkdown(markdown)
-  const outgoingLinks = await resolveLinkTargets(analysis.outgoingLinks, userId)
+  const outgoingLinks = await resolveLinkTargets(analysis.outgoingLinks, userId, access.doc.outgoingLinks)
   const now = new Date(Math.max(Date.now(), access.doc.updatedAt.getTime() + 1))
   const updated = await documents.findOneAndUpdate({ ...scope, ...revisionFilter }, {
     $set: { markdown, searchText: analysis.searchText, outgoingLinks, markdownIndexedAt: now, updatedAt: now },

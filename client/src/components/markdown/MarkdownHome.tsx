@@ -137,7 +137,23 @@ export default function MarkdownHome() {
     return next
   }, { replace: true })
   const [searchResults, setSearchResults] = useState<MarkdownDocumentMeta[] | null>(null)
-  useEffect(() => { if (!enabled || (!query.trim() && !selectedTag)) { setSearchResults(null); return }; const timer = setTimeout(() => { documentsApi.searchMarkdown(query, selectedTag).then((result) => setSearchResults(result.filter((item): item is MarkdownDocumentMeta => item.editorType === 'markdown'))).catch(() => setSearchResults([])) }, 180); return () => clearTimeout(timer) }, [enabled, query, selectedTag])
+  useEffect(() => {
+    if (!enabled || (!query.trim() && !selectedTag)) {
+      setSearchResults(null)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      documentsApi.searchMarkdown(query, selectedTag)
+        .then((result) => setSearchResults(result
+          .filter((item) => item.editorType === 'markdown')
+          .map(({ snippet: _snippet, highlights: _highlights, ...item }) => ({ ...item, editorType: 'markdown' as const })),
+        ))
+        .catch(() => setSearchResults([]))
+    }, 180)
+
+    return () => clearTimeout(timer)
+  }, [enabled, query, selectedTag])
   const visibleDocuments = searchResults ?? documents.filter((document) => (!selectedTag || document.tags?.some((tag) => tag.toLocaleLowerCase() === selectedTag.toLocaleLowerCase())) && document.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
   const setTag = (tag: string) => setParams((current) => { const next = new URLSearchParams(current); if (tag) next.set('tag', tag); else next.delete('tag'); return next }, { replace: true })
 
