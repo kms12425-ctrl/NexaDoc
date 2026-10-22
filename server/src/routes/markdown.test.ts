@@ -80,6 +80,17 @@ describe('Markdown body GET/PUT required by B2', () => {
     const doc = await docs.findOne({ docId })
     expect(doc?.outgoingLinks).toEqual([{ title: '目标', targetDocId: 'target' }, { title: '秘密', targetDocId: null }, { title: '重复', targetDocId: null }])
   })
+  it('keeps an existing targetDocId when the target document is renamed and the source is saved again', async () => {
+    const target = await request(app).post('/api/documents').set('Authorization', `Bearer ${token}`).send({ name: 'Project Home', editorType: 'markdown' })
+    const source = 'See [[Project Home]]'
+    expect((await save({ markdown: source, baseRevision: 0 })).status).toBe(200)
+
+    expect((await request(app).patch(`/api/documents/${target.body.id}/metadata`).set('Authorization', `Bearer ${token}`).send({ title: 'Project Overview' })).status).toBe(200)
+    expect((await save({ markdown: source, baseRevision: 1 })).status).toBe(200)
+
+    const doc = await getDB().collection('documents').findOne({ docId })
+    expect(doc?.outgoingLinks).toEqual([{ title: 'Project Home', targetDocId: target.body.id }])
+  })
   it('does not update the title or tags supplied in a save request', async () => {
     await save({ markdown: 'Changed', baseRevision: 0, title: 'Hijack', tags: ['no'] })
     expect((await getDB().collection('documents').findOne({ docId }))?.title).toBe('Save test')

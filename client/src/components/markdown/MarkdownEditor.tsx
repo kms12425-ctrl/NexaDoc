@@ -41,7 +41,8 @@ function ConflictDialog({ revision, busy, onClose, onResolve }: { revision: numb
 function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: { session: LocalMarkdownSession; readOnly: boolean; docId: string; initialTitle: string; initialTags: string[] }) {
   const [markdown, setMarkdown] = useState(session.getMarkdown())
   const [state, setState] = useState<SessionSnapshot>(session.getSnapshot())
-  const [targets, setTargets] = useState<ReadonlyMap<string, string | null>>(new Map())
+  const [titleTargets, setTitleTargets] = useState<ReadonlyMap<string, string | null>>(new Map())
+  const [resolvedTargets, setResolvedTargets] = useState<ReadonlyMap<string, string | null>>(new Map())
   const [resolving, setResolving] = useState(false)
   const [conflictOpen, setConflictOpen] = useState(false)
   const [layout, setLayout] = useState<'source' | 'split' | 'preview'>('split')
@@ -68,10 +69,18 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
         if (doc.editorType !== 'markdown' || doc.shared) continue
         map.set(doc.name, map.has(doc.name) ? null : doc.id)
       }
-      setTargets(map)
+      setTitleTargets(map)
     }).catch(() => { /* Unknown titles still link to the home title filter. */ })
     return () => { active = false }
   }, [])
+  useEffect(() => {
+    let active = true
+    documentsApi.getLinks(docId).then(({ outgoing }) => {
+      if (!active) return
+      setResolvedTargets(new Map(outgoing.map((link) => [link.title, link.targetDocId])))
+    }).catch(() => { if (active) setResolvedTargets(new Map()) })
+    return () => { active = false }
+  }, [docId, state.revision])
   useEffect(() => {
     const source = sourceRef.current?.getScroller()
     if (!source) return
@@ -95,7 +104,10 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
   }
   const addTag = () => {
     const value = tagText.trim().replace(/^#+/, '').replace(/\s+/g, ' ')
-    if (!value || tags.some((tag) => tag.toLocaleLowerCase() === value.toLocaleLowerCase()) || tags.length >= 20) return
+    if (!value || tags.some((tag) => tag.toLocaleLowerCase() === value.toLocaleLowerCase()) || tags.length >= 20) {
+      setTagText('')
+      return
+    }
     const next = [...tags, value]; setTags(next); setTagText(''); void saveMetadata({ tags: next })
   }
   const syncScroll = (from: 'source' | 'preview') => {
@@ -110,6 +122,8 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
   }
   const characters = [...markdown].length
   const words = markdown.trim() ? markdown.trim().split(/\s+/).length : 0
+  const targets = new Map(titleTargets)
+  for (const [title, targetId] of resolvedTargets) targets.set(title, targetId)
 
   return <>
     <div className="markdown-save-bar">
@@ -125,7 +139,7 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
       {metadataError && <p role="alert" className="docs-error-banner">{metadataError}</p>}
     </div>
     <div className="markdown-layout-controls" role="group" aria-label="Editor layout">{(['source', 'split', 'preview'] as const).map((mode) => <button type="button" className={layout === mode ? 'active' : ''} aria-pressed={layout === mode} onClick={() => setLayout(mode)} key={mode}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}</div>
-    <MarkdownToolbar disabled={readOnly || !!state.recovery || resolving} onInsert={(value) => sourceRef.current?.insert(value)} />
+    <MarkdownToolbar disabled={readOnly || !!state.recovery || resolving} onInsert={(value) => sourceRef.current?.insert(value)} onWrap={(prefix, suffix) => sourceRef.current?.wrap(prefix, suffix)} />
     {state.error && <p className="docs-error-banner" role="alert">{state.error} Your unsaved changes are still in the editor.</p>}
     {state.draftWarning && <p className="docs-info-banner" role="alert">{state.draftWarning}</p>}
     {state.recovery && <section className="markdown-recovery" aria-label="Unsaved draft">
