@@ -105,11 +105,23 @@ export const documentsApi = {
   getMetadata: (docId: string) =>
     apiFetch<DocumentWithAbilities>(`/api/documents/${docId}/metadata`),
 
-  updateMetadata: (docId: string, title: string) =>
+  updateMetadata: (docId: string, changes: string | { title?: string; tags?: string[] }) =>
     apiFetch<{ status: string }>(`/api/documents/${docId}/metadata`, {
       method: 'PATCH',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(typeof changes === 'string' ? { title: changes } : changes),
     }),
+
+  suggest: (query: string, limit = 8) =>
+    apiFetch<Array<{ id: string; title: string; editorType: EditorType }>>(`/api/documents/suggest?q=${encodeURIComponent(query)}&limit=${limit}`),
+
+  listTags: (query = '') =>
+    apiFetch<Array<{ tag: string; count: number }>>(`/api/tags?q=${encodeURIComponent(query)}`),
+
+  searchMarkdown: (query: string, tag = '') =>
+    apiFetch<Array<DocumentWithAbilities & { snippet: string; highlights: Array<{ start: number; length: number }> }>>(`/api/search?q=${encodeURIComponent(query)}&tag=${encodeURIComponent(tag)}&type=markdown`),
+
+  getLinks: (docId: string) =>
+    apiFetch<{ outgoing: Array<{ title: string; label?: string; targetDocId: string | null }>; backlinks: Array<{ id: string; title: string }> }>(`/api/documents/${encodeURIComponent(docId)}/links`),
 
   remove: (docId: string) =>
     apiFetch<{ status: string }>(`/api/documents/${docId}`, {

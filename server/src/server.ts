@@ -24,6 +24,9 @@ import snapshotsRouter from './routes/snapshots'
 import sharingRouter from './routes/sharing'
 import commentsRouter from './routes/comments'
 import markdownRouter from './routes/markdown'
+import tagsRouter from './routes/tags'
+import searchRouter from './routes/search'
+import linksRouter from './routes/links'
 
 /* ─── Configuration ───────────────────────────────────────────── */
 const PORT = process.env.PORT || 3001
@@ -62,6 +65,9 @@ app.use('/api/documents', requireAuth, markdownRouter)
 app.use('/api/documents', requireAuth, sharingRouter)
 app.use('/api/documents', requireAuth, commentsRouter)
 app.use('/api/documents', requireAuth, snapshotsRouter)
+app.use('/api/tags', requireAuth, tagsRouter)
+app.use('/api/search', requireAuth, searchRouter)
+app.use('/api/documents', requireAuth, linksRouter)
 
 /* ── 生产环境：托管前端构建产物（容器镜像内路径 /app/public）── */
 // 目录不存在时（纯开发模式）整段跳过，不影响 Vite :5173 的开发流程

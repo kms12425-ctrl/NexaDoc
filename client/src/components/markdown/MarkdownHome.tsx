@@ -2,18 +2,21 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { isMarkdownApiEnabled, markdownDocumentsApi, type MarkdownDocumentMeta } from '../../services/markdownDocuments'
+import { documentsApi } from '../../services/api'
 import type { MarkdownTemplate } from '../../templates/markdown'
 import AppMenu from '../AppMenu'
 import DocumentCard from '../shared/DocumentCard'
 import CreateDocModal from '../shared/CreateDocModal'
 import MarkdownTemplateGallery from './MarkdownTemplateGallery'
 import MarkdownTemplatePicker from './MarkdownTemplatePicker'
+import TagFilter from './TagFilter'
 
 export default function MarkdownHome() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const query = params.get('q') ?? ''
+  const selectedTag = params.get('tag') ?? ''
   const enabled = isMarkdownApiEnabled()
   const [documents, setDocuments] = useState<MarkdownDocumentMeta[]>([])
   const [loading, setLoading] = useState(enabled)
@@ -27,6 +30,7 @@ export default function MarkdownHome() {
   const [deleteTarget, setDeleteTarget] = useState<MarkdownDocumentMeta | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [tagCounts, setTagCounts] = useState<Array<{ tag: string; count: number }>>([])
   const mountedRef = useRef(false)
   const creatingRef = useRef(false)
   const deletingRef = useRef(false)
@@ -52,6 +56,7 @@ export default function MarkdownHome() {
     }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [enabled, attempt, logout])
+  useEffect(() => { if (!enabled) return; documentsApi.listTags().then(setTagCounts).catch(() => setTagCounts([])) }, [enabled, attempt])
 
   useEffect(() => {
     if (!deleteTarget) return
@@ -131,7 +136,10 @@ export default function MarkdownHome() {
     else next.delete('q')
     return next
   }, { replace: true })
-  const visibleDocuments = documents.filter((document) => document.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  const [searchResults, setSearchResults] = useState<MarkdownDocumentMeta[] | null>(null)
+  useEffect(() => { if (!enabled || (!query.trim() && !selectedTag)) { setSearchResults(null); return }; const timer = setTimeout(() => { documentsApi.searchMarkdown(query, selectedTag).then((result) => setSearchResults(result.filter((item): item is MarkdownDocumentMeta => item.editorType === 'markdown'))).catch(() => setSearchResults([])) }, 180); return () => clearTimeout(timer) }, [enabled, query, selectedTag])
+  const visibleDocuments = searchResults ?? documents.filter((document) => (!selectedTag || document.tags?.some((tag) => tag.toLocaleLowerCase() === selectedTag.toLocaleLowerCase())) && document.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+  const setTag = (tag: string) => setParams((current) => { const next = new URLSearchParams(current); if (tag) next.set('tag', tag); else next.delete('tag'); return next }, { replace: true })
 
   return (
     <div className="docs-shell markdown-workspace">
@@ -164,6 +172,7 @@ export default function MarkdownHome() {
         <p id="markdown-search-help" className="visually-hidden">Search documents by title.</p>
         {!enabled && <p className="docs-info-banner" role="status">Markdown document creation and storage are not available yet. You can explore the templates below.</p>}
         <MarkdownTemplateGallery onSelect={chooseTemplate} />
+        <TagFilter items={tagCounts} selected={selectedTag} onSelect={setTag} />
         <div className="section-divider" />
         <section className="recent-section" aria-label="My Markdown documents">
           <h2 className="section-label">{query.trim() ? 'Search results' : 'My documents'}<span className="doc-count">{visibleDocuments.length}</span></h2>

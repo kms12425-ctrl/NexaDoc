@@ -141,6 +141,14 @@ describe('PATCH /api/documents/:docId/metadata', () => {
 
     expect(res.status).toBe(403)
   })
+
+  it('replaces Markdown tags with normalized, deduplicated values', async () => {
+    const { token } = await registerUser(app, 'doc-tags')
+    const doc = await request(app).post('/api/documents').set('Authorization', `Bearer ${token}`).send({ name: 'Tagged', editorType: 'markdown' })
+    const res = await request(app).patch(`/api/documents/${doc.body.id}/metadata`).set('Authorization', `Bearer ${token}`).send({ tags: [' #阅读 ', '阅读', 'Yjs', '', 123] })
+    expect(res.status).toBe(200)
+    expect(res.body.tags).toEqual(['阅读', 'Yjs'])
+  })
 })
 
 describe('DELETE /api/documents/:docId', () => {
