@@ -33,7 +33,7 @@ function MarkdownPreview({ markdown, targets = EMPTY_TARGETS }: { markdown: stri
     img: ({ src, alt, title }) => <img src={src} alt={alt ?? ''} title={title} loading="lazy" />,
   }), [targets])
 
-  return <div className="markdown-preview" aria-label="Markdown preview" role="region">
+  return <div className="markdown-preview" aria-label="Markdown preview" role="region" tabIndex={0}>
     {!deferred.trim() ? <p className="markdown-preview-placeholder">Start typing to see the preview.</p>
       : <PreviewBoundary markdown={deferred}><ReactMarkdown remarkPlugins={plugins} components={components} skipHtml>{deferred}</ReactMarkdown></PreviewBoundary>}
   </div>

@@ -167,11 +167,38 @@ router.patch('/:docId/metadata', async (req: AuthRequest, res: Response) =>
     return
   }
 
-  await db.collection<DocumentDoc>('documents').updateOne(
-    { docId: req.params.docId },
-    { $set: { title: req.body.title, updatedAt: new Date() } }
+  const body = req.body
+  if (!body || typeof body !== 'object' || Array.isArray(body) || (!Object.hasOwn(body, 'title') && !Object.hasOwn(body, 'tags'))) {
+    res.status(400).json({ error: 'Provide title or tags' }); return
+  }
+  const fields: Partial<DocumentDoc> = {}
+  if (Object.hasOwn(body, 'title')) {
+    if (typeof body.title !== 'string' || !body.title.trim() || (access.doc.editorType === 'markdown' && body.title.trim().length > 120)) {
+      res.status(400).json({ error: 'Title must be non-empty (Markdown: max 120 characters)' }); return
+    }
+    fields.title = body.title.trim()
+  }
+  if (Object.hasOwn(body, 'tags')) {
+    if (!Array.isArray(body.tags) || body.tags.some((tag: unknown) => typeof tag !== 'string')) {
+      res.status(400).json({ error: 'Tags must be an array of strings' }); return
+    }
+    const cleaned = body.tags.map((tag: string) => tag.trim().replace(/^#+/, '').replace(/\s+/g, ' ').trim())
+    if (cleaned.some((tag: string) => !tag || tag.length > 30)) {
+      res.status(400).json({ error: 'Tags must contain 1–30 characters' }); return
+    }
+    if (new Set(cleaned.map((tag: string) => tag.toLocaleLowerCase())).size > 20) {
+      res.status(400).json({ error: 'Too many tags (max 20)' }); return
+    }
+    fields.tags = normalizeTags(cleaned)
+  }
+  fields.updatedAt = new Date(Math.max(Date.now(), access.doc.updatedAt.getTime() + 1))
+  const updated = await db.collection<DocumentDoc>('documents').findOneAndUpdate(
+    { _id: access.doc._id, deletedAt: null, ...(access.doc.editorType === 'markdown' ? { ownerUserId: new ObjectId(req.user!.id) } : {}) },
+    { $set: fields }, { returnDocument: 'after' },
   )
-  res.json({ status: 'ok' })
+  if (!updated) { res.status(404).json({ error: 'Document not found' }); return }
+  // Metadata never changes the body revision or its search/link/CRDT indexes.
+  res.json({ status: 'ok', ...serializeDocument(updated) })
 })
 
 /**

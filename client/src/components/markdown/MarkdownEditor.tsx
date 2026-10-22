@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { EditorView } from '@codemirror/view'
 import { Link } from 'react-router-dom'
 import { documentsApi, getToken, type DocumentWithAbilities } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
@@ -7,6 +8,12 @@ import { LocalMarkdownSession, type SessionSnapshot } from '../../markdown/sessi
 import AppMenu from '../AppMenu'
 import MarkdownSource from './MarkdownSource'
 import MarkdownPreview from './MarkdownPreview'
+import MarkdownToolbar from './MarkdownToolbar'
+import { applyMarkdownFormat, type MarkdownFormat } from '../../markdown/formatting'
+import { connectScrollSync } from '../../markdown/scrollSync'
+import MarkdownMetadata from './MarkdownMetadata'
+
+type Layout = 'source' | 'split' | 'preview'
 
 const statusLabels = { idle: 'Unsaved changes', saving: 'Saving…', saved: 'Saved', offline: 'Offline — changes kept in this browser', conflict: 'Conflict — saving paused' }
 
@@ -40,6 +47,34 @@ function EditorSession({ session, readOnly }: { session: LocalMarkdownSession; r
   const [targets, setTargets] = useState<ReadonlyMap<string, string | null>>(new Map())
   const [resolving, setResolving] = useState(false)
   const [conflictOpen, setConflictOpen] = useState(false)
+  const [layout, setLayout] = useState<Layout>(() => window.matchMedia?.('(max-width: 899px)').matches ? 'source' : 'split')
+  const [syncScroll, setSyncScroll] = useState(true)
+  const [cursor, setCursor] = useState({ line: 1, column: 1 })
+  const [view, setView] = useState<EditorView | null>(null)
+  const panesRef = useRef<HTMLDivElement>(null)
+  const scrollSyncRef = useRef<ReturnType<typeof connectScrollSync> | null>(null)
+  const updateCursor = useCallback((next: { line: number; column: number }) => {
+    scrollSyncRef.current?.pause()
+    setCursor(next)
+  }, [])
+  const counts = useMemo(() => {
+    const chinese = markdown.match(/[\u3400-\u9fff]/g)?.length ?? 0
+    const words = markdown.replace(/[\u3400-\u9fff]/g, ' ').match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)?.length ?? 0
+    return { words: chinese + words, characters: Array.from(markdown).length }
+  }, [markdown])
+  const togglePreview = useCallback(() => setLayout((current) => current === 'preview' ? 'source' : 'preview'), [])
+  useEffect(() => {
+    view?.requestMeasure()
+    if (layout !== 'split' || !syncScroll || !view) return
+    const preview = panesRef.current?.querySelector<HTMLElement>('.markdown-preview')
+    if (preview) {
+      const controller = connectScrollSync(view.scrollDOM, preview)
+      scrollSyncRef.current = controller
+      return () => { controller.destroy(); scrollSyncRef.current = null }
+    }
+  }, [layout, syncScroll, view])
+  const format = (action: MarkdownFormat) => { if (view) applyMarkdownFormat(view, action) }
+  const sourceLocked = readOnly || !!state.recovery || resolving
   useEffect(() => { if (state.conflict) setConflictOpen(true) }, [state.conflict])
   useEffect(() => {
     const unsubscribe = session.subscribe(setMarkdown)
@@ -67,7 +102,21 @@ function EditorSession({ session, readOnly }: { session: LocalMarkdownSession; r
     finally { setResolving(false) }
   }
 
-  return <>
+  return <div className="markdown-editing-area" onKeyDownCapture={(event) => {
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
+      event.preventDefault(); event.stopPropagation(); togglePreview()
+      requestAnimationFrame(() => {
+        if (layout === 'preview') view?.focus()
+        else panesRef.current?.querySelector<HTMLElement>('.markdown-preview')?.focus()
+      })
+    }
+  }}>
+    <div className="markdown-layout-controls" role="group" aria-label="Editor layout">
+      {(['source', 'split', 'preview'] as const).map((mode) => <button key={mode} type="button" aria-pressed={layout === mode}
+        onClick={() => setLayout(mode)}>{mode === 'source' ? 'Source' : mode === 'split' ? 'Split' : 'Preview'}</button>)}
+      <label><input type="checkbox" checked={syncScroll} disabled={layout !== 'split'} onChange={(event) => setSyncScroll(event.target.checked)} /> Sync scrolling</label>
+    </div>
+    {!readOnly && layout !== 'preview' && <MarkdownToolbar disabled={sourceLocked || !view} onFormat={format} />}
     <div className="markdown-save-bar">
       <span role="status" aria-live="polite">{readOnly ? 'Read only' : statusLabels[state.status]}</span>
       <span className="markdown-revision">Revision {state.revision}</span>
@@ -84,11 +133,12 @@ function EditorSession({ session, readOnly }: { session: LocalMarkdownSession; r
       <div><button type="button" className="modal-cancel" onClick={() => setConflictOpen(true)}>Resolve conflict</button></div>
     </section>}
     {state.conflict && conflictOpen && <ConflictDialog revision={state.conflict.revision} busy={resolving} onClose={() => setConflictOpen(false)} onResolve={(mode) => { void resolve(mode) }} />}
-    <div className="markdown-editor-panes">
-      <section className="markdown-source-pane" aria-label="Source pane"><h2>Source</h2><MarkdownSource session={session} readOnly={readOnly || !!state.recovery || resolving} /></section>
-      <section className="markdown-preview-pane" aria-label="Preview pane"><h2>Preview</h2><MarkdownPreview markdown={markdown} targets={targets} /></section>
+    <div ref={panesRef} className={`markdown-editor-panes markdown-layout-${layout}`}>
+      <section hidden={layout === 'preview'} className="markdown-source-pane" aria-label="Source pane"><h2>Source</h2><MarkdownSource session={session} readOnly={sourceLocked} onView={setView} onCursor={updateCursor} onTogglePreview={togglePreview} /></section>
+      <section hidden={layout === 'source'} className="markdown-preview-pane" aria-label="Preview pane"><h2>Preview</h2><MarkdownPreview markdown={markdown} targets={targets} /></section>
     </div>
-  </>
+    <footer className="markdown-status-bar" aria-label="Document statistics"><span>{counts.words} words</span><span>{counts.characters} characters</span><span>Ln {cursor.line}, Col {cursor.column}</span></footer>
+  </div>
 }
 
 export default function MarkdownEditor({ metadata }: { metadata: DocumentWithAbilities }) {
@@ -96,6 +146,8 @@ export default function MarkdownEditor({ metadata }: { metadata: DocumentWithAbi
   const [session, setSession] = useState<LocalMarkdownSession | null>(null)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [details, setDetails] = useState({ id: metadata.id, name: metadata.name, tags: metadata.tags ?? [] })
+  const currentMetadata = details.id === metadata.id ? { ...metadata, name: details.name, tags: details.tags } : metadata
   const readOnly = metadata.abilities.canEdit === false
 
   useEffect(() => {
@@ -127,9 +179,10 @@ export default function MarkdownEditor({ metadata }: { metadata: DocumentWithAbi
     <header className="topbar"><div className="topbar-left">
       <AppMenu current="markdown-editor" />
       <Link className="back-btn" to="/markdown" aria-label="Back to Markdown documents">←</Link>
-      <h1 className="markdown-editor-title">{metadata.name}</h1>
+      <h1 className="markdown-editor-title">{currentMetadata.name}</h1>
     </div></header>
     <main className="markdown-editor-main">
+      <MarkdownMetadata key={metadata.id} metadata={currentMetadata} readOnly={readOnly} onSaved={(value) => setDetails({ id: metadata.id, ...value })} />
       {session ? <EditorSession key={metadata.id} session={session} readOnly={readOnly} />
         : error ? <section className="route-status"><h2>Unable to load Markdown</h2><p role="alert">{error}</p><button type="button" className="new-doc-btn" onClick={() => setAttempt((value) => value + 1)}>Try again</button></section>
           : <p className="route-status" role="status">Loading Markdown…</p>}

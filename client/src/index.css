@@ -1971,6 +1971,26 @@ a:hover { text-decoration: underline; }
 .markdown-preview img { max-width: 100%; height: auto; }
 .markdown-preview hr { border: 0; border-top: 1px solid var(--gray-200); margin: 20px 0; }
 .markdown-preview-placeholder { color: var(--gray-500); }
+.markdown-editor-panes > [hidden] { display: none; }
+.markdown-layout-source, .markdown-layout-preview { grid-template-columns: minmax(0, 1fr); }
+.markdown-layout-controls, .markdown-format-toolbar, .markdown-status-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.markdown-layout-controls button, .markdown-format-toolbar button, .markdown-metadata button { border: 1px solid var(--gray-300); border-radius: 6px; padding: 6px 10px; background: #fff; color: var(--gray-800); cursor: pointer; font-size: 13px; }
+.markdown-layout-controls button[aria-pressed="true"] { background: var(--blue-100); color: var(--blue-600); border-color: var(--blue-500); }
+.markdown-layout-controls label { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.markdown-format-toolbar { padding: 8px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--gray-50); }
+.markdown-format-toolbar button:focus-visible, .markdown-layout-controls button:focus-visible, .markdown-metadata button:focus-visible { outline: 2px solid var(--blue-500); outline-offset: 2px; }
+.markdown-format-toolbar button:disabled, .markdown-metadata button:disabled { opacity: .5; cursor: default; }
+.markdown-status-bar { padding: 10px 0; color: var(--gray-600); font-size: 12px; gap: 20px; }
+.markdown-metadata { border: 1px solid var(--gray-200); border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 13px; }
+.markdown-title-form, .markdown-tag-form { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.markdown-metadata input { min-width: 0; flex: 1; border: 1px solid var(--gray-300); border-radius: 6px; padding: 7px 10px; font: inherit; }
+.markdown-metadata input:focus-visible { outline: 2px solid var(--blue-500); outline-offset: 1px; }
+.markdown-tag-list { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+.markdown-tag { display: inline-flex; align-items: center; gap: 6px; border-radius: 12px; padding: 2px 8px; background: var(--blue-100); overflow-wrap: anywhere; }
+.markdown-tag button { padding: 0 4px; border: none; background: transparent; }
+.markdown-no-tags, .markdown-metadata-message { color: var(--gray-600); }
+.markdown-metadata-message { margin-top: 8px; }
+.markdown-metadata [role="alert"] { color: #b42318; margin-top: 8px; }
 .markdown-recovery, .markdown-conflict { border: 1px solid #ead494; background: #fffbed; border-radius: 8px; padding: 16px; margin-bottom: 16px; font-size: 14px; line-height: 1.6; }
 .markdown-recovery h2, .markdown-conflict h2 { font-size: 16px; margin-bottom: 4px; }
 .markdown-recovery > div, .markdown-conflict > div { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
@@ -1979,4 +1999,6 @@ a:hover { text-decoration: underline; }
   .markdown-editor-panes { grid-template-columns: minmax(0, 1fr); }
   .markdown-source, .markdown-preview { height: 380px; }
   .markdown-preview { padding: 20px; }
+  .markdown-title-form label, .markdown-tag-form label { flex-basis: 100%; }
+  .markdown-layout-controls label { margin-left: 0; }
 }
