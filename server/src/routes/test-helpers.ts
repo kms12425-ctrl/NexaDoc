@@ -7,6 +7,9 @@ import sharingRouter from './sharing'
 import commentsRouter from './comments'
 import markdownRouter from './markdown'
 import snapshotsRouter from './snapshots'
+import tagsRouter from './tags'
+import searchRouter from './search'
+import linksRouter from './links'
 import type { DocumentDoc } from '../types'
 import { ObjectId } from 'mongodb'
 import { generateDocId } from '../docId'
@@ -28,6 +31,9 @@ export function createTestApp(): Express {
   app.use('/api/documents', requireAuth, sharingRouter)
   app.use('/api/documents', requireAuth, commentsRouter)
   app.use('/api/documents', requireAuth, snapshotsRouter)
+  app.use('/api/tags', requireAuth, tagsRouter)
+  app.use('/api/search', requireAuth, searchRouter)
+  app.use('/api/documents', requireAuth, linksRouter)
   return app
 }
 

@@ -78,6 +78,21 @@ router.get('/', async (req: AuthRequest, res: Response) =>
   res.json([...ownedResult, ...sharedResult].sort((a, b) => b.updatedAt - a.updatedAt))
 })
 
+/** P0 wiki-link title completion. Only the current user's Markdown documents are visible. */
+router.get('/suggest', async (req: AuthRequest, res: Response) => {
+  const raw = typeof req.query.q === 'string' ? req.query.q.trim() : ''
+  const requested = Number(req.query.limit)
+  const limit = Number.isSafeInteger(requested) ? Math.min(Math.max(requested, 1), 20) : 8
+  const ownerUserId = new ObjectId(req.user!.id)
+  const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const contains = raw ? { title: { $regex: escaped, $options: 'i' } } : {}
+  const documents = getDB().collection<DocumentDoc>('documents')
+  const matches = await documents.find({ ownerUserId, editorType: 'markdown', deletedAt: null, ...contains }, { projection: { docId: 1, title: 1, editorType: 1, updatedAt: 1 } }).sort({ updatedAt: -1 }).limit(100).toArray()
+  const lower = raw.toLocaleLowerCase()
+  const result = matches.sort((a, b) => Number(b.title.toLocaleLowerCase().startsWith(lower)) - Number(a.title.toLocaleLowerCase().startsWith(lower))).slice(0, limit)
+  res.json(result.map((doc) => ({ id: doc.docId, title: doc.title, editorType: 'markdown' })))
+})
+
 /**
  * POST /api/documents — 创建文档，ownerUserId 设为当前用户
  */
@@ -167,11 +182,22 @@ router.patch('/:docId/metadata', async (req: AuthRequest, res: Response) =>
     return
   }
 
+  const changes: Partial<Pick<DocumentDoc, 'title' | 'tags' | 'updatedAt'>> = { updatedAt: new Date() }
+  if (req.body?.title !== undefined) {
+    if (typeof req.body.title !== 'string' || !req.body.title.trim()) { res.status(400).json({ error: 'Title must be a non-empty string' }); return }
+    changes.title = req.body.title.trim()
+  }
+  if (req.body?.tags !== undefined) {
+    if (!Array.isArray(req.body.tags)) { res.status(400).json({ error: 'Tags must be an array' }); return }
+    changes.tags = normalizeTags(req.body.tags)
+  }
+  if (changes.title === undefined && changes.tags === undefined) { res.status(400).json({ error: 'Provide title or tags' }); return }
   await db.collection<DocumentDoc>('documents').updateOne(
     { docId: req.params.docId },
-    { $set: { title: req.body.title, updatedAt: new Date() } }
+    { $set: changes }
   )
-  res.json({ status: 'ok' })
+  const updated = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
+  res.json({ status: 'ok', ...(updated ? serializeDocument(updated) : {}) })
 })
 
 /**

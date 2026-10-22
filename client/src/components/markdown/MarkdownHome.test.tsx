@@ -10,6 +10,7 @@ import { documentsApi } from '../../services/api'
 import MarkdownHome from './MarkdownHome'
 
 const url = 'http://localhost:3001/api/documents'
+const tagsUrl = 'http://localhost:3001/api/tags'
 const server = setupServer()
 const document = {
   id: 'md-project', name: 'Project Plan', editorType: 'markdown', createdAt: 1, updatedAt: 2,
@@ -43,6 +44,7 @@ beforeEach(() => {
   vi.stubEnv('VITE_MARKDOWN_API_ENABLED', 'true')
   sessionStorage.setItem('cdocs_token', `e30.${btoa(JSON.stringify({ id: 'u1', username: 'alice', exp: Date.now() / 1000 + 3600 }))}.signature`)
   server.use(http.get(url, () => HttpResponse.json([])))
+  server.use(http.get(tagsUrl, () => HttpResponse.json([])))
 })
 afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); vi.unstubAllEnvs() })
 afterAll(() => server.close())

@@ -7,6 +7,10 @@ import { LocalMarkdownSession, type SessionSnapshot } from '../../markdown/sessi
 import AppMenu from '../AppMenu'
 import MarkdownSource from './MarkdownSource'
 import MarkdownPreview from './MarkdownPreview'
+import MarkdownToolbar from './MarkdownToolbar'
+import type { MarkdownSourceHandle } from './MarkdownSource'
+import BacklinksPanel from './BacklinksPanel'
+import { useNavigate } from 'react-router-dom'
 
 const statusLabels = { idle: 'Unsaved changes', saving: 'Saving…', saved: 'Saved', offline: 'Offline — changes kept in this browser', conflict: 'Conflict — saving paused' }
 
@@ -34,12 +38,21 @@ function ConflictDialog({ revision, busy, onClose, onResolve }: { revision: numb
   </div></div>
 }
 
-function EditorSession({ session, readOnly }: { session: LocalMarkdownSession; readOnly: boolean }) {
+function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: { session: LocalMarkdownSession; readOnly: boolean; docId: string; initialTitle: string; initialTags: string[] }) {
   const [markdown, setMarkdown] = useState(session.getMarkdown())
   const [state, setState] = useState<SessionSnapshot>(session.getSnapshot())
   const [targets, setTargets] = useState<ReadonlyMap<string, string | null>>(new Map())
   const [resolving, setResolving] = useState(false)
   const [conflictOpen, setConflictOpen] = useState(false)
+  const [layout, setLayout] = useState<'source' | 'split' | 'preview'>('split')
+  const [title, setTitle] = useState(initialTitle)
+  const [tags, setTags] = useState(initialTags)
+  const [tagText, setTagText] = useState('')
+  const [metadataBusy, setMetadataBusy] = useState(false)
+  const [metadataError, setMetadataError] = useState('')
+  const sourceRef = useRef<MarkdownSourceHandle>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const syncingScrollRef = useRef(false)
   useEffect(() => { if (state.conflict) setConflictOpen(true) }, [state.conflict])
   useEffect(() => {
     const unsubscribe = session.subscribe(setMarkdown)
@@ -59,6 +72,13 @@ function EditorSession({ session, readOnly }: { session: LocalMarkdownSession; r
     }).catch(() => { /* Unknown titles still link to the home title filter. */ })
     return () => { active = false }
   }, [])
+  useEffect(() => {
+    const source = sourceRef.current?.getScroller()
+    if (!source) return
+    const onScroll = () => syncScroll('source')
+    source.addEventListener('scroll', onScroll)
+    return () => source.removeEventListener('scroll', onScroll)
+  })
 
   const resolve = async (mode: 'latest' | 'mine') => {
     if (resolving) return
@@ -66,6 +86,30 @@ function EditorSession({ session, readOnly }: { session: LocalMarkdownSession; r
     try { if (mode === 'latest') await session.loadLatest(); else await session.overwriteConflict() }
     finally { setResolving(false) }
   }
+  const saveMetadata = async (changes: { title?: string; tags?: string[] }) => {
+    if (readOnly || metadataBusy) return
+    setMetadataBusy(true); setMetadataError('')
+    try { await documentsApi.updateMetadata(docId, changes) }
+    catch (error) { setMetadataError(error instanceof Error ? error.message : 'Unable to save document details.') }
+    finally { setMetadataBusy(false) }
+  }
+  const addTag = () => {
+    const value = tagText.trim().replace(/^#+/, '').replace(/\s+/g, ' ')
+    if (!value || tags.some((tag) => tag.toLocaleLowerCase() === value.toLocaleLowerCase()) || tags.length >= 20) return
+    const next = [...tags, value]; setTags(next); setTagText(''); void saveMetadata({ tags: next })
+  }
+  const syncScroll = (from: 'source' | 'preview') => {
+    if (syncingScrollRef.current) return
+    const source = sourceRef.current?.getScroller(); const preview = previewRef.current
+    if (!source || !preview) return
+    const left = from === 'source' ? source : preview; const right = from === 'source' ? preview : source
+    const ratio = left.scrollTop / Math.max(1, left.scrollHeight - left.clientHeight)
+    syncingScrollRef.current = true
+    right.scrollTop = ratio * Math.max(0, right.scrollHeight - right.clientHeight)
+    requestAnimationFrame(() => { syncingScrollRef.current = false })
+  }
+  const characters = [...markdown].length
+  const words = markdown.trim() ? markdown.trim().split(/\s+/).length : 0
 
   return <>
     <div className="markdown-save-bar">
@@ -73,6 +117,15 @@ function EditorSession({ session, readOnly }: { session: LocalMarkdownSession; r
       <span className="markdown-revision">Revision {state.revision}</span>
       {!readOnly && <button type="button" className="modal-cancel" disabled={!state.dirty || state.status === 'saving' || !!state.recovery || !!state.conflict} onClick={() => { void session.saveNow() }}>Save now</button>}
     </div>
+    <div className="markdown-document-details">
+      <label>Title <input value={title} disabled={readOnly || metadataBusy} onChange={(event) => setTitle(event.target.value)} onBlur={() => { if (title.trim() && title !== initialTitle) void saveMetadata({ title: title.trim() }) }} /></label>
+      <div className="markdown-tags" aria-label="Tags">{tags.map((tag) => <span key={tag} className="markdown-tag">{tag}{!readOnly && <button type="button" aria-label={`Remove ${tag}`} onClick={() => { const next = tags.filter((value) => value !== tag); setTags(next); void saveMetadata({ tags: next }) }}>×</button>}</span>)}
+        {!readOnly && <input aria-label="Add tag" value={tagText} placeholder="Add tag" onChange={(event) => setTagText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTag() } }} onBlur={addTag} />}
+      </div>
+      {metadataError && <p role="alert" className="docs-error-banner">{metadataError}</p>}
+    </div>
+    <div className="markdown-layout-controls" role="group" aria-label="Editor layout">{(['source', 'split', 'preview'] as const).map((mode) => <button type="button" className={layout === mode ? 'active' : ''} aria-pressed={layout === mode} onClick={() => setLayout(mode)} key={mode}>{mode[0].toUpperCase() + mode.slice(1)}</button>)}</div>
+    <MarkdownToolbar disabled={readOnly || !!state.recovery || resolving} onInsert={(value) => sourceRef.current?.insert(value)} />
     {state.error && <p className="docs-error-banner" role="alert">{state.error} Your unsaved changes are still in the editor.</p>}
     {state.draftWarning && <p className="docs-info-banner" role="alert">{state.draftWarning}</p>}
     {state.recovery && <section className="markdown-recovery" aria-label="Unsaved draft">
@@ -84,10 +137,11 @@ function EditorSession({ session, readOnly }: { session: LocalMarkdownSession; r
       <div><button type="button" className="modal-cancel" onClick={() => setConflictOpen(true)}>Resolve conflict</button></div>
     </section>}
     {state.conflict && conflictOpen && <ConflictDialog revision={state.conflict.revision} busy={resolving} onClose={() => setConflictOpen(false)} onResolve={(mode) => { void resolve(mode) }} />}
-    <div className="markdown-editor-panes">
-      <section className="markdown-source-pane" aria-label="Source pane"><h2>Source</h2><MarkdownSource session={session} readOnly={readOnly || !!state.recovery || resolving} /></section>
-      <section className="markdown-preview-pane" aria-label="Preview pane"><h2>Preview</h2><MarkdownPreview markdown={markdown} targets={targets} /></section>
+    <div className={`markdown-editor-panes markdown-layout-${layout}`}>
+      <section className="markdown-source-pane" aria-label="Source pane"><h2>Source</h2><MarkdownSource ref={sourceRef} session={session} readOnly={readOnly || !!state.recovery || resolving} suggest={(query) => documentsApi.suggest(query)} /></section>
+      <section className="markdown-preview-pane" aria-label="Preview pane"><h2>Preview</h2><div ref={previewRef} onScroll={() => syncScroll('preview')}><MarkdownPreview markdown={markdown} targets={targets} /></div></section>
     </div>
+    <footer className="markdown-status-bar"><span>{words} words · {characters} characters · {markdown.split('\n').length} lines</span><span>{state.status === 'saved' ? 'All changes saved' : statusLabels[state.status]}</span></footer>
   </>
 }
 
@@ -97,6 +151,7 @@ export default function MarkdownEditor({ metadata }: { metadata: DocumentWithAbi
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
   const readOnly = metadata.abilities.canEdit === false
+  const navigate = useNavigate()
 
   useEffect(() => {
     if (!user) return
@@ -130,7 +185,7 @@ export default function MarkdownEditor({ metadata }: { metadata: DocumentWithAbi
       <h1 className="markdown-editor-title">{metadata.name}</h1>
     </div></header>
     <main className="markdown-editor-main">
-      {session ? <EditorSession key={metadata.id} session={session} readOnly={readOnly} />
+      {session ? <><EditorSession key={metadata.id} session={session} readOnly={readOnly} docId={metadata.id} initialTitle={metadata.name} initialTags={metadata.tags ?? []} /><BacklinksPanel docId={metadata.id} onNavigate={(id) => navigate(`/markdown/${encodeURIComponent(id)}`)} /></>
         : error ? <section className="route-status"><h2>Unable to load Markdown</h2><p role="alert">{error}</p><button type="button" className="new-doc-btn" onClick={() => setAttempt((value) => value + 1)}>Try again</button></section>
           : <p className="route-status" role="status">Loading Markdown…</p>}
     </main>
