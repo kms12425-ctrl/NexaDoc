@@ -105,10 +105,10 @@ export const documentsApi = {
   getMetadata: (docId: string) =>
     apiFetch<DocumentWithAbilities>(`/api/documents/${docId}/metadata`),
 
-  updateMetadata: (docId: string, title: string) =>
-    apiFetch<{ status: string }>(`/api/documents/${docId}/metadata`, {
+  updateMetadata: (docId: string, titleOrPatch: string | { title?: string; tags?: string[] }) =>
+    apiFetch<DocumentMeta & { status: string }>(`/api/documents/${encodeURIComponent(docId)}/metadata`, {
       method: 'PATCH',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(typeof titleOrPatch === 'string' ? { title: titleOrPatch } : titleOrPatch),
     }),
 
   remove: (docId: string) =>

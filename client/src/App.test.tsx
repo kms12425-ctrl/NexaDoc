@@ -18,6 +18,9 @@ vi.mock('./services/api', async (importOriginal) => {
 })
 vi.mock('./components/DocsPage', () => ({ default: () => <h1>Docs workspace</h1> }))
 // Route tests exercise the metadata guard; body loading is covered by editor/session tests.
+vi.mock('./components/markdown/MarkdownSource', () => ({ default: () => null }))
+vi.mock('./components/markdown/MarkdownPreview', () => ({ default: () => null }))
+vi.mock('./markdown/formatting', () => ({ applyMarkdownFormat: vi.fn() }))
 vi.mock('./markdown/contentApi', async (importOriginal) => ({
   ...await importOriginal<typeof import('./markdown/contentApi')>(),
   createMarkdownTransport: () => ({ load: () => new Promise(() => {}), save: vi.fn() }),

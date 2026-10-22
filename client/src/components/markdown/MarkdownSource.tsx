@@ -1,15 +1,26 @@
 import { useEffect, useRef } from 'react'
 import { basicSetup } from 'codemirror'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { markdown } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import type { MarkdownSession } from '../../markdown/session/MarkdownSession'
+import { applyMarkdownFormat } from '../../markdown/formatting'
 
-export default function MarkdownSource({ session, readOnly = false }: { session: MarkdownSession; readOnly?: boolean }) {
+interface Props {
+  session: MarkdownSession
+  readOnly?: boolean
+  onView?: (view: EditorView | null) => void
+  onCursor?: (cursor: { line: number; column: number }) => void
+  onTogglePreview?: () => void
+}
+
+export default function MarkdownSource({ session, readOnly = false, ...callbacks }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const editableRef = useRef(new Compartment())
+  const callbacksRef = useRef(callbacks)
+  callbacksRef.current = callbacks
 
   useEffect(() => {
     const editable = editableRef.current
@@ -25,7 +36,13 @@ export default function MarkdownSource({ session, readOnly = false }: { session:
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ 'aria-label': 'Markdown source', 'aria-multiline': 'true' }),
           editable.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
-          keymap.of([{ key: 'Mod-s', run: () => { void session.saveNow(); return true } }]),
+          Prec.highest(keymap.of([
+            { key: 'Mod-s', run: () => { void session.saveNow(); return true } },
+            { key: 'Mod-b', run: (view) => applyMarkdownFormat(view, 'bold') },
+            { key: 'Mod-i', run: (view) => applyMarkdownFormat(view, 'italic') },
+            { key: 'Mod-k', run: (view) => applyMarkdownFormat(view, 'link') },
+            { key: 'Mod-Shift-p', run: () => { callbacksRef.current.onTogglePreview?.(); return true } },
+          ])),
           EditorView.domEventHandlers({
             compositionstart: () => { clearTimeout(compositionEndTimer); session.setComposing?.(true) },
             compositionend: () => {
@@ -35,11 +52,18 @@ export default function MarkdownSource({ session, readOnly = false }: { session:
           }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !replacing) session.update(update.state.doc.toString())
+            if (update.docChanged || update.selectionSet) {
+              const head = update.state.selection.main.head
+              const line = update.state.doc.lineAt(head)
+              callbacksRef.current.onCursor?.({ line: line.number, column: head - line.from + 1 })
+            }
           }),
         ],
       }),
     })
     viewRef.current = view
+    callbacksRef.current.onView?.(view)
+    callbacksRef.current.onCursor?.({ line: 1, column: 1 })
     const unsubscribe = session.subscribe((next) => {
       if (next === view.state.doc.toString()) return
       replacing = true
@@ -50,6 +74,7 @@ export default function MarkdownSource({ session, readOnly = false }: { session:
       unsubscribe()
       clearTimeout(compositionEndTimer)
       viewRef.current = null
+      callbacksRef.current.onView?.(null)
       view.destroy()
     }
     // Permission changes are handled by the compartment below without resetting undo/selection.

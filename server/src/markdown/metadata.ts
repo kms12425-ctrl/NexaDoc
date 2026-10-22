@@ -2,7 +2,7 @@ import type { DocumentDoc } from '../types'
 
 export const MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
 
-// Also reused by A4 when PATCH gains tag replacement support.
+// Creation tolerates invalid entries; PATCH validates first, then shares normalization.
 export function normalizeTags(input: unknown): string[] {
   if (!Array.isArray(input)) return []
   const seen = new Set<string>()
