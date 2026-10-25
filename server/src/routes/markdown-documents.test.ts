@@ -202,4 +202,34 @@ describe('A3 lists and metadata', () => {
     expect((await request(app).get(`/api/documents/${md.body.id}/metadata`).set('Authorization', `Bearer ${owner.token}`)).status).toBe(404)
     expect((await getDB().collection('documents').findOne({ docId: md.body.id }))?.markdown).toBe('# Keep body')
   })
+  it('replaces and normalizes tags via PATCH metadata', async () => {
+    const md = await create({ editorType: 'markdown', tags: ['old'] })
+    const res = await request(app).patch(`/api/documents/${md.body.id}/metadata`).set('Authorization', `Bearer ${owner.token}`).send({ tags: [' #New ', 'new', '  two   words  ', null] })
+    expect(res.status).toBe(200)
+    expect((await getDB().collection('documents').findOne({ docId: md.body.id }))?.tags).toEqual(['New', 'two words'])
+  })
+
+  it('caps tags at 20 entries and 30 characters each', async () => {
+    const md = await create({ editorType: 'markdown' })
+    const tags = [...Array.from({ length: 25 }, (_, index) => `t${index}`), 'x'.repeat(31)]
+    const res = await request(app).patch(`/api/documents/${md.body.id}/metadata`).set('Authorization', `Bearer ${owner.token}`).send({ tags })
+    expect(res.status).toBe(200)
+    const doc = await getDB().collection('documents').findOne({ docId: md.body.id })
+    expect(doc?.tags).toHaveLength(20)
+    expect(doc?.tags.every((tag: string) => tag.length <= 30)).toBe(true)
+  })
+
+  it('updates title and tags together', async () => {
+    const md = await create({ editorType: 'markdown', tags: ['a'] })
+    const res = await request(app).patch(`/api/documents/${md.body.id}/metadata`).set('Authorization', `Bearer ${owner.token}`).send({ title: 'New Title', tags: ['b'] })
+    expect(res.status).toBe(200)
+    expect(res.body.name).toBe('New Title')
+    expect(res.body.tags).toEqual(['b'])
+  })
+
+  it('rejects non-array tags and empty patches', async () => {
+    const md = await create({ editorType: 'markdown' })
+    expect((await request(app).patch(`/api/documents/${md.body.id}/metadata`).set('Authorization', `Bearer ${owner.token}`).send({ tags: 'not-an-array' })).status).toBe(400)
+    expect((await request(app).patch(`/api/documents/${md.body.id}/metadata`).set('Authorization', `Bearer ${owner.token}`).send({})).status).toBe(400)
+  })
 })
