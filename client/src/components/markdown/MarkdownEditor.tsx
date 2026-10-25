@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { documentsApi, getToken, type DocumentWithAbilities } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
@@ -11,6 +11,8 @@ import MarkdownToolbar from './MarkdownToolbar'
 import type { MarkdownSourceHandle } from './MarkdownSource'
 import BacklinksPanel from './BacklinksPanel'
 import { useNavigate } from 'react-router-dom'
+
+const ExportMenu = lazy(() => import('./ExportMenu'))
 
 const statusLabels = { idle: 'Unsaved changes', saving: 'Saving…', saved: 'Saved', offline: 'Offline — changes kept in this browser', conflict: 'Conflict — saving paused' }
 
@@ -129,6 +131,9 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
     <div className="markdown-save-bar">
       <span role="status" aria-live="polite">{readOnly ? 'Read only' : statusLabels[state.status]}</span>
       <span className="markdown-revision">Revision {state.revision}</span>
+      <Suspense fallback={<button type="button" className="export-menu-trigger" disabled>Export ▾</button>}>
+        <ExportMenu title={title} getMarkdown={() => session.getMarkdown()} />
+      </Suspense>
       {!readOnly && <button type="button" className="modal-cancel" disabled={!state.dirty || state.status === 'saving' || !!state.recovery || !!state.conflict} onClick={() => { void session.saveNow() }}>Save now</button>}
     </div>
     <div className="markdown-document-details">

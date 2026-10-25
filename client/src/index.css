@@ -1939,6 +1939,51 @@ a:hover { text-decoration: underline; }
 .markdown-save-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-height: 42px; margin-bottom: 12px; font-size: 13px; color: var(--gray-700); }
 .markdown-revision { color: var(--gray-500); margin-left: auto; }
 .markdown-save-bar button:disabled { opacity: .5; cursor: default; }
+.export-menu { position: relative; }
+.export-menu-trigger {
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--gray-300);
+  background: #fff;
+  color: var(--gray-800);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration) var(--ease);
+}
+.export-menu-trigger:hover,
+.export-menu-trigger[aria-expanded="true"] { background: var(--gray-100); border-color: var(--gray-400); }
+.export-menu-trigger:focus-visible,
+.export-menu-panel button:focus-visible { outline: 2px solid var(--blue-500); outline-offset: 2px; }
+.export-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 200;
+  width: min(220px, calc(100vw - 32px));
+  padding: 8px;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+.export-menu-panel button {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gray-800);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.export-menu-panel button:hover:not(:disabled),
+.export-menu-panel button:focus-visible { background: var(--gray-100); }
+.export-menu-panel button:disabled { color: var(--gray-500); cursor: default; }
 .markdown-editor-panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; border: 1px solid var(--gray-200); border-radius: 10px; overflow: hidden; background: var(--gray-200); }
 .markdown-source-pane, .markdown-preview-pane { min-width: 0; display: flex; flex-direction: column; background: #fff; }
 .markdown-source-pane > h2, .markdown-preview-pane > h2 { font-size: 12px; color: var(--gray-600); font-weight: 600; padding: 12px 16px; border-bottom: 1px solid var(--gray-200); }
