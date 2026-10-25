@@ -90,7 +90,8 @@ describe('workspace routes', () => {
     getMetadata.mockResolvedValue(markdown)
     renderAt('/document/md-note?from=search#section')
 
-    expect(await screen.findByRole('heading', { name: 'Study notes' })).toBeInTheDocument()
+    // MarkdownEditor 懒加载（CodeMirror + react-markdown 等重依赖）在整仓并行测试下可能超过默认 1s。
+    expect(await screen.findByRole('heading', { name: 'Study notes' }, { timeout: 5000 })).toBeInTheDocument()
     expect(window.location.pathname).toBe('/markdown/md-note')
     expect(window.location.search).toBe('?from=search')
     expect(window.location.hash).toBe('#section')
