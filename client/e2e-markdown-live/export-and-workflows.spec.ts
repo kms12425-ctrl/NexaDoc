@@ -39,6 +39,48 @@ async function openExportMenu(page: Page) {
   await expect(page.getByRole('menu', { name: 'Export formats' })).toBeVisible()
 }
 
+// html2pdf writes each page as a JPEG XObject. Inspect its actual pixels, not
+// just the download event/file size (a completely blank PDF can have both).
+function pdfPageImages(pdf: Buffer): string[] {
+  const images: string[] = []
+  let offset = 0
+  while ((offset = pdf.indexOf('/Subtype /Image', offset)) !== -1) {
+    const stream = pdf.indexOf('\nstream\n', offset)
+    expect(stream).toBeGreaterThan(offset)
+    const dictionary = pdf.subarray(offset, stream).toString('latin1')
+    const length = /\/Length\s+(\d+)/.exec(dictionary)
+    expect(length).not.toBeNull()
+    const start = stream + '\nstream\n'.length
+    if (/\/Filter\s+\/DCTDecode/.test(dictionary)) images.push('data:image/jpeg;base64,' + pdf.subarray(start, start + Number(length![1])).toString('base64'))
+    offset = start + Number(length![1])
+  }
+  return images
+}
+
+async function expectNonBlankPdf(page: Page, file: string) {
+  const bytes = await readFile(file)
+  expect(bytes.subarray(0, 5).toString()).toBe('%PDF-')
+  const images = pdfPageImages(bytes)
+  expect(images.length).toBeGreaterThan(0)
+  const darkPixels = await page.evaluate(async (urls) => {
+    const counts: number[] = []
+    for (const url of urls) {
+      const image = new Image(); image.src = url; await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = image.width; canvas.height = image.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(image, 0, 0)
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+      let dark = 0
+      for (let i = 0; i < pixels.length; i += 4) if (pixels[i] < 160 && pixels[i + 1] < 160 && pixels[i + 2] < 160) dark++
+      counts.push(dark)
+    }
+    return counts
+  }, images)
+  for (const count of darkPixels) expect(count, 'each PDF page must contain visible content').toBeGreaterThan(100)
+  return images.length
+}
+
 test('exports Markdown and HTML using a sanitized filename', async ({ page, request }) => {
   const id = await create(request, '# 导出测试\n\n- 内容', '导出/文档:名称')
   await page.goto(`/markdown/${id}`)
@@ -55,7 +97,7 @@ test('exports Markdown and HTML using a sanitized filename', async ({ page, requ
   expect((await htmlDownload).suggestedFilename()).toBe('导出文档名称.html')
 })
 
-test('exports PDF using html2pdf', async ({ page, request }) => {
+test('exports PDF with actual visible page content', async ({ page, request }, testInfo) => {
   const id = await create(request, '# PDF 内容\n\n正文段落')
   await page.goto(`/markdown/${id}`)
   await expect(page.getByRole('textbox', { name: 'Markdown source' })).toContainText('PDF 内容')
@@ -64,8 +106,48 @@ test('exports PDF using html2pdf', async ({ page, request }) => {
   // html2pdf.js 在前端生成，较慢，给足超时。
   const pdfDownload = page.waitForEvent('download', { timeout: 30000 })
   await page.getByRole('menuitem', { name: 'PDF (.pdf)' }).click()
-  expect((await pdfDownload).suggestedFilename()).toMatch(/\.pdf$/i)
+  const download = await pdfDownload
+  expect(download.suggestedFilename()).toMatch(/\.pdf$/i)
+  const output = testInfo.outputPath('markdown-short.pdf')
+  await download.saveAs(output)
+  await expectNonBlankPdf(page, output)
 })
+
+for (const mode of ['source', 'preview'] as const) {
+  test(`exports a nonblank PDF in ${mode} layout, preserving latest source and editor styles`, async ({ page, request }, testInfo) => {
+    const markdown = '# 中文导出验收 PDF\n\n**加粗**、*斜体*、English 123。\n\n'
+      + (mode === 'source' ? Array.from({ length: 40 }, (_, index) => `## 第 ${index + 1} 节\n\n中文正文与 English paragraph ${index + 1}，检查多页正文不丢失。\n\n`).join('') : '')
+      + '| 项目 | 状态 |\n| --- | --- |\n| 导出 | 正常 |\n\n```js\nconst message = "中文";\nconsole.log(message);\n```\n\nEND-PDF-CONTENT'
+    if (mode === 'preview') await page.setViewportSize({ width: 375, height: 812 })
+    const id = await create(request, markdown)
+    await page.goto(`/markdown/${id}`)
+    const source = page.getByRole('textbox', { name: 'Markdown source' })
+    await expect(source).toContainText('中文导出验收')
+    // Keep saving offline, but leave lazy-loaded export scripts accessible.
+    await page.route(`**/api/documents/${id}/markdown`, (route) => route.request().method() === 'PUT' ? route.abort('failed') : route.continue())
+    await source.fill(markdown + '\n\nUNSAVED-PDF-END')
+    await expect(page.getByRole('status')).toContainText('Offline')
+    expect((await db.collection('documents').findOne({ docId: id })).markdown).toBe(markdown)
+    const bodyStyle = () => page.locator('body').evaluate((node) => {
+      const style = getComputedStyle(node)
+      return { margin: style.margin, maxWidth: style.maxWidth, fontSize: style.fontSize }
+    })
+    const before = await bodyStyle()
+    await page.getByRole('button', { name: mode === 'source' ? 'Source' : 'Preview', exact: true }).click()
+    await openExportMenu(page)
+    const pending = page.waitForEvent('download', { timeout: 30000 })
+    await page.getByRole('menuitem', { name: 'PDF (.pdf)' }).click()
+    const download = await pending
+    const output = testInfo.outputPath(`markdown-${mode}.pdf`)
+    await download.saveAs(output)
+    const pages = await expectNonBlankPdf(page, output)
+    if (mode === 'source') expect(pages).toBeGreaterThan(1)
+    expect(await bodyStyle()).toEqual(before)
+    await expect(page.locator('.html2pdf__overlay')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Split', exact: true }).click()
+    await expect(source).toContainText('UNSAVED-PDF-END')
+  })
+}
 
 test('exports DOCX using the docx package', async ({ page, request }) => {
   const id = await create(request, '# DOCX 标题\n\n**加粗** 与列表\n\n- 项目一\n- 项目二')

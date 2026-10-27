@@ -4,16 +4,16 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CreateDocModal from './CreateDocModal'
 
-function renderModal() {
+function renderModal(initialName = '', placeholder = 'Untitled document') {
   const onConfirm = vi.fn()
   const onClose = vi.fn()
 
   function NamingForm() {
-    const [name, setName] = useState('')
+    const [name, setName] = useState(initialName)
     return (
       <CreateDocModal
         value={name}
-        placeholder="Untitled document"
+        placeholder={placeholder}
         description="Give your document a name to get started."
         onChange={setName}
         onConfirm={() => onConfirm(name)}
@@ -26,6 +26,19 @@ function renderModal() {
 }
 
 describe('CreateDocModal', () => {
+  it('shows a template name as a placeholder with an empty focused value and accepts direct typing', async () => {
+    const { onConfirm } = renderModal('', 'Meeting Notes')
+    const input = screen.getByRole('textbox', { name: 'Document name' }) as HTMLInputElement
+    expect(input).toHaveFocus()
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe(0)
+    expect(input).toHaveValue('')
+    expect(input).toHaveAttribute('placeholder', 'Meeting Notes')
+    await userEvent.keyboard('新名称')
+    expect(input).toHaveValue('新名称')
+    await userEvent.keyboard('追加{Enter}')
+    expect(onConfirm).toHaveBeenCalledWith('新名称追加')
+  })
   it('focuses the name field and submits the current name with Enter', async () => {
     const user = userEvent.setup()
     const { onConfirm } = renderModal()

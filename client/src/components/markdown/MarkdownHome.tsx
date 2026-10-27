@@ -69,7 +69,7 @@ export default function MarkdownHome() {
 
   const chooseTemplate = (template: MarkdownTemplate) => {
     setPendingTemplate(template)
-    setName(template.category === 'blank' ? '' : template.name)
+    setName('')
     setCreateError('')
     setPickerOpen(false)
   }

@@ -76,7 +76,8 @@ describe('MarkdownHome', () => {
     expect(screen.getByRole('button', { name: 'Meeting Notes' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Weekly Report' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Meeting Notes' }))
-    expect(screen.getByRole('textbox', { name: 'Document name' })).toHaveValue('Meeting Notes')
+    expect(screen.getByRole('textbox', { name: 'Document name' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: 'Document name' })).toHaveAttribute('placeholder', 'Meeting Notes')
   })
 
   it('opens all seven templates from New document and restores focus after cancellation', async () => {
@@ -89,7 +90,8 @@ describe('MarkdownHome', () => {
     await user.click(within(picker).getByRole('button', { name: 'Personal' }))
     expect(picker.querySelectorAll('.template-card')).toHaveLength(2)
     await user.click(within(picker).getByRole('button', { name: /Reading Notes/ }))
-    expect(screen.getByRole('textbox', { name: 'Document name' })).toHaveValue('Reading Notes')
+    expect(screen.getByRole('textbox', { name: 'Document name' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: 'Document name' })).toHaveAttribute('placeholder', 'Reading Notes')
     await user.keyboard('{Escape}')
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -107,7 +109,8 @@ describe('MarkdownHome', () => {
     await user.click(within(screen.getByRole('group', { name: 'Template categories' })).getByRole('button', { name: 'Business' }))
     await user.click(screen.getByRole('button', { name: 'Meeting Notes' }))
     const input = screen.getByRole('textbox', { name: 'Document name' })
-    await user.clear(input)
+    expect(input).toHaveValue('')
+    expect(input).toHaveAttribute('placeholder', 'Meeting Notes')
     await user.type(input, '  项目会议  {Enter}')
 
     expect(await screen.findByRole('heading', { name: 'Opened created' })).toBeInTheDocument()
@@ -126,6 +129,24 @@ describe('MarkdownHome', () => {
 
     expect(await screen.findByRole('heading', { name: 'Opened blank' })).toBeInTheDocument()
     expect(body).toEqual({ name: 'Untitled document', editorType: 'markdown', markdown: '', tags: [] })
+  })
+
+  it('creates a nonblank template with its default name when the placeholder is left untouched', async () => {
+    let body: unknown
+    server.use(http.post(url, async ({ request }) => {
+      body = await request.json()
+      return HttpResponse.json({ ...document, id: 'default-template' }, { status: 201 })
+    }))
+    renderHome()
+    await userEvent.click(within(screen.getByRole('group', { name: 'Template categories' })).getByRole('button', { name: 'Business' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Meeting Notes' }))
+    const input = screen.getByRole('textbox', { name: 'Document name' })
+    expect(input).toHaveFocus()
+    expect(input).toHaveValue('')
+    expect(input).toHaveAttribute('placeholder', 'Meeting Notes')
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByRole('heading', { name: 'Opened default-template' })).toBeInTheDocument()
+    expect(body).toEqual({ name: 'Meeting Notes', editorType: 'markdown', markdown: markdownTemplates.find(({ id }) => id === 'md-meeting-notes')!.markdown, tags: [] })
   })
 
   it('preserves the name and template on failure and allows creation to be retried', async () => {
