@@ -94,7 +94,7 @@ test.describe('Workspace navigation', () => {
     await page.goto('/document/md-note?from=search#heading')
 
     await expect(page).toHaveURL(/\/markdown\/md-note\?from=search#heading$/)
-    await expect(page.getByRole('heading', { name: 'Markdown note' })).toBeVisible()
+    await expect(page.getByRole('banner').getByRole('heading', { name: 'Markdown note' })).toBeVisible()
     expect(sockets).toHaveLength(0)
     await expect(page.locator('.ProseMirror')).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^(Share|Comments|History)$/ })).toHaveCount(0)

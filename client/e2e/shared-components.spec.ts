@@ -49,6 +49,24 @@ async function mockDocuments(page: Page) {
 }
 
 test.describe('Shared document components', () => {
+  test('shows the Essay template as a gray placeholder and accepts a custom name without clearing', async ({ page }, testInfo) => {
+    const { created } = await mockDocuments(page)
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Education', exact: true }).click()
+    await page.getByTitle('Title, introduction, body, conclusion, references').click()
+    const input = page.getByRole('textbox', { name: 'Document name' })
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue('')
+    await expect(input).toHaveAttribute('placeholder', 'Essay')
+    expect(await input.evaluate((node) => getComputedStyle(node, '::placeholder').color)).toBe('rgb(128, 134, 139)')
+    await page.getByRole('dialog', { name: 'Name your document' }).locator('.modal').screenshot({ path: testInfo.outputPath('essay-name-placeholder.png'), animations: 'disabled' })
+    await page.keyboard.insertText('我的论文')
+    await expect(input).toHaveValue('我的论文')
+    await input.press('Enter')
+    await expect(page).toHaveURL(/\/document\/created-notes$/)
+    expect(created).toEqual([{ name: '我的论文' }])
+  })
+
   test('renders owned/shared previews and opens a card with the keyboard', async ({ page }, testInfo) => {
     await mockDocuments(page)
     await page.goto('/')

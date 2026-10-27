@@ -199,8 +199,31 @@ test('keeps source and preview usable at 375px', async ({ page, request }, testI
   const id = await create(request, '# 手机笔记\n\n- [ ] 移动端测试')
   await page.setViewportSize({ width: 375, height: 812 })
   await page.goto(`/markdown/${id}`)
-  await expect(page.getByRole('textbox', { name: 'Markdown source' })).toBeVisible()
+  const source = page.getByRole('textbox', { name: 'Markdown source' })
+  await expect(source).toBeVisible()
   await expect(page.getByRole('region', { name: 'Markdown preview' })).toContainText('手机笔记')
+  const sourcePane = page.getByRole('region', { name: 'Source pane' })
+  const previewPane = page.getByRole('region', { name: 'Preview pane' })
+  await expect(page.getByRole('button', { name: 'Split', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  const sourceBounds = (await sourcePane.boundingBox())!
+  const previewBounds = (await previewPane.boundingBox())!
+  expect(previewBounds.y).toBeGreaterThanOrEqual(sourceBounds.y + sourceBounds.height)
+  expect(Math.abs(previewBounds.x - sourceBounds.x)).toBeLessThan(2)
+  await page.getByRole('button', { name: 'Source', exact: true }).click()
+  await expect(previewPane).toBeHidden()
+  await page.getByRole('button', { name: 'Preview', exact: true }).click()
+  await expect(sourcePane).toBeHidden()
+  await expect(previewPane).toBeVisible()
+  await page.getByRole('button', { name: 'Split', exact: true }).click()
+  await expect(sourcePane).toBeVisible()
+  await expect(previewPane).toBeVisible()
+  await page.setViewportSize({ width: 1280, height: 812 })
+  await expect.poll(async () => {
+    const left = (await sourcePane.boundingBox())!
+    const right = (await previewPane.boundingBox())!
+    return right.x >= left.x + left.width
+  }).toBe(true)
+  await page.setViewportSize({ width: 375, height: 812 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('markdown-editor-mobile.png'), fullPage: true, animations: 'disabled' })
 })

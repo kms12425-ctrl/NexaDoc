@@ -149,7 +149,7 @@
 ### 4.4 编辑与实时预览
 
 - 默认布局：**左侧 CodeMirror 源码，右侧 react-markdown 预览**，约 50/50。
-- 顶部可切换 `Source / Split / Preview` 三种布局；窄屏默认单栏并显示 segmented control。
+- 顶部可切换 `Source / Split / Preview` 三种布局；窄屏 Split 改为上下排列，源码在上、预览在下，Source / Preview 可单独查看。
 - 输入时预览在 **80–150ms** 内更新；不阻塞输入（`useDeferredValue` / 防抖）。
 - 滚动同步默认开启：按源码行号比例映射到预览位置；拖动分栏条为 P1。
 - 左侧支持语法高亮、行号、当前行高亮、自动换行、括号匹配、搜索替换。
@@ -901,7 +901,7 @@ class LocalMarkdownSession implements MarkdownSession {
 
 - CSS Grid：`grid-template-columns: minmax(320px, 1fr) minmax(0, 1fr)`。
 - 默认 `Split`；顶部 segmented control 切换 `Source / Split / Preview`。
-- 窄屏（< 900px）只能单栏，显示 `Source / Preview` tab。
+- 窄屏（< 900px）Split 为上下排列（源码在上、预览在下），保留 `Source / Split / Preview` 三态。
 - P1 可选：可拖拽分隔条，宽度保存在 `localStorage`。
 
 #### 8.2.2 预览更新策略
@@ -1320,7 +1320,7 @@ P0 至少提供 7 个：
 - 顶部右侧：保存状态、字数、`Export ▾`；**P0 没有 Share / Comments / History / 协作者头像**。
 - 左侧：CodeMirror；右侧：预览；中间可拖拽（P1）。
 - 右侧 `Links` 抽屉：`Backlinks` / `Outgoing` 两个 tab；默认收起。
-- 窄屏：`Source / Preview` 两个 tab 二选一；`Links` 变全屏抽屉。
+- 窄屏：Split 下源码和预览上下排列，Source / Preview 可单独查看；`Links` 变全屏抽屉。
 
 P2 后同一位置会增加：
 - `Share` 按钮；
@@ -1555,7 +1555,7 @@ P2-G0/G1/G2/G3 仍分别对应契约/配置确认、分享可用、协作可用�
 | 17 | B2 | MarkdownSession、自动保存与草稿恢复 | 已完成 | 1.5 | B1、A5 | 800ms 保存、300ms 草稿节流、离线/退出处理、显式冲突选择。 |
 | 18 | B3 | 安全实时预览、GFM 与 remarkWikiLink | 已完成 | 1.0 | B1 | 标题/列表/表格/任务/代码/双链；80ms 更新；不执行原始 HTML。 |
 | 19 | B8 | 路由守卫、保存状态与只读准备 | 已完成 | 0.5 | C2、B1、B2 | 已由 C2 和 B1/B2 交付；P2 的共享只读协作另行验收。 |
-| 20 | B4 | Source/Split/Preview 三态、滚动同步、状态栏 | 已完成（Vitest 未跑完） | 1.0 | B2、B3 | 完成人：Fang。三态布局、按滚动比例同步、字数/字符/行数及保存状态栏已接入；窄屏 Split 回退为单栏。|
+| 20 | B4 | Source/Split/Preview 三态、滚动同步、状态栏 | 已完成 | 1.0 | B2、B3 | 完成人：Fang。三态布局、按滚动比例同步、字数/字符/行数及保存状态栏已接入；2026-10-27 修订为窄屏 Split 上下排列，源码在上、预览在下。 |
 | 21 | B5 | 格式工具栏、快捷键与插入逻辑 | 已完成 | 1.0 | B1 | 完成人：Fang。标题、强调、代码、引用、列表、任务、链接、双链和表格插入工具栏已实现；保留 Ctrl/Cmd+S 与 CodeMirror 默认键。 |
 | 22 | A4 | 标签规范化与 PATCH metadata 替换 | 已完成 | 0.5 | A3 | 完成人：Fang。PATCH 支持标题/标签独立或组合更新；服务端规范化、去重、上限及权限检查生效，并补充路由测试。 |
 | 23 | B7 | 标签编辑、标题保存与冲突 UI | 已完成 | 1.0 | A4、B2 | 完成人：Fang。编辑器中可改标题、增删标签；原有 revision 冲突 UI 保持。 |

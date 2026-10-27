@@ -67,7 +67,7 @@ export default function CreateDocModal({
         {error && <p className="modal-error" role="alert">{error}</p>}
         <input
           ref={inputRef}
-          className="modal-input"
+          className="modal-input document-name-input"
           type="text"
           placeholder={placeholder}
           value={value}

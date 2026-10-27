@@ -831,6 +831,10 @@ a:hover { text-decoration: underline; }
   border-color: var(--blue-500);
   box-shadow: 0 0 0 3px var(--blue-100);
 }
+.document-name-input::placeholder {
+  color: var(--gray-600);
+  opacity: 1;
+}
 
 .modal-actions {
   display: flex;
@@ -2042,7 +2046,6 @@ a:hover { text-decoration: underline; }
 @media (max-width: 899px) {
   .markdown-editor-main { padding: 12px; }
   .markdown-editor-panes { grid-template-columns: minmax(0, 1fr); }
-  .markdown-layout-split .markdown-preview-pane { display: none; }
-  .markdown-source, .markdown-preview { height: 380px; }
+  .markdown-source, .markdown-preview, .markdown-preview-pane > div { height: 380px; }
   .markdown-preview { padding: 20px; }
 }
