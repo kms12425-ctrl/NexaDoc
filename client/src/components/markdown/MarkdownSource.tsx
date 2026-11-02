@@ -1,6 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { yCollab } from 'y-codemirror.next'
+import { CollabMarkdownSession } from '../../markdown/session/CollabMarkdownSession'
 import { basicSetup } from 'codemirror'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { markdown } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
@@ -14,6 +16,7 @@ export interface MarkdownSourceHandle {
 }
 
 function wrapSelection(view: EditorView, prefix: string, suffix = prefix): boolean {
+  if (view.state.readOnly) return true
   const { from, to } = view.state.selection.main
   const selected = view.state.sliceDoc(from, to)
   view.dispatch({
@@ -31,13 +34,13 @@ const MarkdownSource = forwardRef<MarkdownSourceHandle, { session: MarkdownSessi
   const suggestionsRef = useRef(new Map<string, { expires: number; items: Array<{ title: string; editorType: string }> }>())
   useImperativeHandle(ref, () => ({
     insert(text) {
-      const view = viewRef.current; if (!view) return
+      const view = viewRef.current; if (!view || view.state.readOnly) return
       const { from, to } = view.state.selection.main
       view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } })
       view.focus()
     },
     wrap(prefix, suffix) {
-      const view = viewRef.current; if (!view) return
+      const view = viewRef.current; if (!view || view.state.readOnly) return
       wrapSelection(view, prefix, suffix)
     },
     getScroller: () => viewRef.current?.scrollDOM ?? null,
@@ -70,6 +73,19 @@ const MarkdownSource = forwardRef<MarkdownSourceHandle, { session: MarkdownSessi
       state: EditorState.create({
         doc: session.getMarkdown(),
         extensions: [
+          ...(session instanceof CollabMarkdownSession ? [Prec.highest(EditorView.domEventHandlers({
+            keydown(event, view) {
+              const key = event.key.toLowerCase()
+              if (!(event.ctrlKey || event.metaKey) || event.altKey || (key !== 'z' && key !== 'y')) return false
+              event.preventDefault()
+              // Some keyboard layouts report a lower-case key even with Shift.
+              if (!view.state.readOnly) {
+                if (key === 'y' || event.shiftKey) session.undoManager.redo()
+                else session.undoManager.undo()
+              }
+              return true
+            },
+          })), yCollab(session.text, session.provider.awareness, { undoManager: session.undoManager })] : []),
           basicSetup,
           markdown({ codeLanguages: languages }),
           autocompletion({ override: [wikiCompletion], activateOnTyping: true }),
@@ -90,10 +106,10 @@ const MarkdownSource = forwardRef<MarkdownSourceHandle, { session: MarkdownSessi
           }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !replacing) {
-              session.update(update.state.doc.toString())
+              if (!(session instanceof CollabMarkdownSession)) session.update(update.state.doc.toString())
               const { from, to } = update.state.selection.main
               const beforeCursor = update.state.sliceDoc(0, from)
-              if (from === to && /\[\[[^\]|\n]*$/.test(beforeCursor)) startCompletion(update.view)
+              if (view.hasFocus && from === to && /\[\[[^\]|\n]*$/.test(beforeCursor)) startCompletion(update.view)
             }
           }),
         ],
@@ -101,7 +117,7 @@ const MarkdownSource = forwardRef<MarkdownSourceHandle, { session: MarkdownSessi
     })
     viewRef.current = view
     const unsubscribe = session.subscribe((next) => {
-      if (next === view.state.doc.toString()) return
+      if (session instanceof CollabMarkdownSession || next === view.state.doc.toString()) return
       replacing = true
       try { view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } }) }
       finally { replacing = false }

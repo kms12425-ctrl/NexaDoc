@@ -1,0 +1,106 @@
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import * as Y from 'yjs'
+import request from 'supertest'
+import { createTestApp, registerUser, grantAccess } from '../routes/test-helpers'
+import { getDB } from '../db'
+import { ensureMarkdownState } from './crdt'
+import { mongoPersistence, toBuffer, setMarkdownWriter } from '../persistence'
+const app = createTestApp()
+afterEach(() => vi.unstubAllEnvs())
+async function seed(markdown = '# Initial') {
+  const user = await registerUser(app, 'seed-owner')
+  const created = await request(app).post('/api/documents').set('Authorization', `Bearer ${user.token}`).send({ name: 'Keep title', editorType: 'markdown', markdown, tags: ['keep'] })
+  return { id: created.body.id as string, user }
+}
+describe('Markdown CRDT migration and mirrors', () => {
+  it('uses one seed identity for simultaneous first opens', async () => {
+    const { id } = await seed()
+    const states = await Promise.all(Array.from({ length: 10 }, () => ensureMarkdownState(id)))
+    expect(new Set(states.map((doc) => toBuffer(doc.crdtState).toString('base64'))).size).toBe(1)
+    const merged = new Y.Doc()
+    for (const doc of states) Y.applyUpdate(merged, toBuffer(doc.crdtState))
+    expect(merged.getText('markdown').toString()).toBe('# Initial'); merged.destroy()
+  })
+  it('adds an epoch to pre-existing CRDT state without reseeding it', async () => {
+    const { id } = await seed()
+    const original = new Y.Doc(); original.getText('markdown').insert(0, '# Existing CRDT')
+    const state = Buffer.from(Y.encodeStateAsUpdate(original)); original.destroy()
+    await getDB().collection('documents').updateOne({ docId: id }, { $set: { crdtState: state, crdtStateSize: state.length } })
+    const loaded = await ensureMarkdownState(id)
+    expect(loaded.markdownEpoch).toBe(0); expect(toBuffer(loaded.crdtState)).toEqual(state)
+    const doc = new Y.Doc(); await mongoPersistence.bindState(id, doc)
+    await mongoPersistence.writeState(id, doc)
+    expect((await getDB().collection('documents').findOne({ docId: id }))?.markdown).toBe('# Existing CRDT')
+    doc.destroy()
+  })
+  it('persists an empty seed once and never re-inserts deleted content', async () => {
+    const { id } = await seed('')
+    const first = await ensureMarkdownState(id)
+    expect(toBuffer(first.crdtState).length).toBeGreaterThan(0)
+    expect(toBuffer((await ensureMarkdownState(id)).crdtState)).toEqual(toBuffer(first.crdtState))
+  })
+  it('mirrors source, search and links without overwriting title/tags/owner', async () => {
+    const { id, user } = await seed()
+    const doc = new Y.Doc(); await mongoPersistence.bindState(id, doc)
+    doc.getText('markdown').insert(doc.getText('markdown').length, ' mirror-key [[Missing target]]')
+    await mongoPersistence.writeState(id, doc)
+    const stored = await getDB().collection('documents').findOne({ docId: id })
+    expect(stored).toMatchObject({ title: 'Keep title', tags: ['keep'], revision: 1 })
+    expect(stored?.ownerUserId.toString()).toBe(user.userId)
+    expect(stored?.searchText).toContain('mirror-key')
+    expect(stored?.outgoingLinks).toEqual([{ title: 'Missing target', targetDocId: null }])
+    const restored = new Y.Doc(); Y.applyUpdate(restored, toBuffer(stored?.crdtState))
+    expect(restored.getText('markdown').toString()).toBe(stored?.markdown)
+    const updatedAt = stored?.updatedAt
+    await mongoPersistence.writeState(id, doc)
+    const unchanged = await getDB().collection('documents').findOne({ docId: id })
+    expect(unchanged?.revision).toBe(1); expect(unchanged?.updatedAt).toEqual(updatedAt)
+    doc.destroy(); restored.destroy()
+  })
+  it('resolves new links in the editing user visibility scope without leaking private targets to the owner', async () => {
+    const { id, user } = await seed()
+    const editor = await registerUser(app, 'link-editor')
+    const target = await request(app).post('/api/documents').set('Authorization', `Bearer ${editor.token}`).send({ name: 'Editor private target', editorType: 'markdown', markdown: '' })
+    vi.stubEnv('MARKDOWN_SHARING_ENABLED', 'true')
+    await grantAccess(id, editor.userId, 'editor')
+    const doc = new Y.Doc(); await mongoPersistence.bindState(id, doc)
+    setMarkdownWriter(doc, editor.userId)
+    doc.getText('markdown').insert(doc.getText('markdown').length, ' [[Editor private target]]')
+    await mongoPersistence.writeState(id, doc)
+    const get = (token: string) => request(app).get(`/api/documents/${id}/links`).set('Authorization', `Bearer ${token}`)
+    expect((await get(editor.token)).body.outgoing[0].targetDocId).toBe(target.body.id)
+    expect((await get(user.token)).body.outgoing[0].targetDocId).toBeNull()
+    doc.destroy()
+  })
+  it('invalidates old CRDT caches after a REST rollback write and prevents an old bound room from overwriting it', async () => {
+    const { id, user } = await seed()
+    const stale = new Y.Doc(); await mongoPersistence.bindState(id, stale)
+    const response = await request(app).put(`/api/documents/${id}/markdown`).set('Authorization', `Bearer ${user.token}`).send({ markdown: 'REST after rollback', baseRevision: 0 })
+    expect(response.status).toBe(200)
+    stale.getText('markdown').insert(0, 'old-room')
+    await mongoPersistence.writeState(id, stale)
+    const migrated = await ensureMarkdownState(id)
+    const restored = new Y.Doc(); Y.applyUpdate(restored, toBuffer(migrated.crdtState))
+    expect(restored.getText('markdown').toString()).toBe('REST after rollback')
+    expect(migrated.markdownEpoch).toBe(1)
+    stale.destroy(); restored.destroy()
+  })
+  it('does not resurrect a soft-deleted Markdown document during a pending save', async () => {
+    const { id } = await seed()
+    const doc = new Y.Doc(); await mongoPersistence.bindState(id, doc)
+    await getDB().collection('documents').updateOne({ docId: id }, { $set: { deletedAt: new Date() } })
+    doc.getText('markdown').insert(0, 'pending')
+    await mongoPersistence.writeState(id, doc)
+    expect((await getDB().collection('documents').findOne({ docId: id }))?.markdown).toBe('# Initial')
+    await expect(ensureMarkdownState(id)).rejects.toThrow('Document not found'); doc.destroy()
+  })
+  it('returns the same seeded CRDT state from the collaborative HTTP bootstrap and blocks REST dual writes', async () => {
+    const { id, user } = await seed()
+    vi.stubEnv('MARKDOWN_COLLAB_ENABLED', 'true')
+    const get = () => request(app).get(`/api/documents/${id}/markdown`).set('Authorization', `Bearer ${user.token}`)
+    const [one, two] = await Promise.all([get(), get()])
+    expect(one.body.crdtState).toBe(two.body.crdtState)
+    expect(one.body).toMatchObject({ collaborationEnabled: true, collaborationEpoch: 0, markdown: '# Initial' })
+    expect((await request(app).put(`/api/documents/${id}/markdown`).set('Authorization', `Bearer ${user.token}`).send({ markdown: 'bad', baseRevision: 0 })).status).toBe(409)
+  })
+})

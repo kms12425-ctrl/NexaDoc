@@ -55,6 +55,50 @@
 4. 导出始终使用编辑器里的最新内容（包括尚未自动保存的改动）。
 5. 说明：PDF 由浏览器前端生成，大文档较慢；DOCX 的表格降级为纯文本、图片仅保留替代文字。
 
-## 10. 权限说明
+## 10. 分享与权限
 
-P0 阶段 Markdown 文档为 **仅所有者可见**：没有 Share / Comments / History 按钮，他人无法访问你的 Markdown 页面或接口。
+分享默认关闭，此时 Markdown 文档仅所有者可见。开启 `MARKDOWN_SHARING_ENABLED=true` 并重启后，所有者可通过 Share 邀请已注册账号，选择 Reader / Commenter / Editor，撤销或调整角色。
+
+- Reader / Commenter 可查看、导出，不能修改正文、标题、标签，也不能分享或删除；Comments / History 暂不提供。
+- Editor 可编辑正文和元数据，不能分享或删除。所有者能管理分享、删除。
+- 获邀文档出现在 Shared with me；搜索、标签、双链补全和反链只包含当前有权访问的文档。主页打开时收到邀请会自动更新。
+- Copy link 复制 `/markdown/:id` 地址；没有被邀请的用户即使知道链接也无法访问。
+- 角色更改后，已打开页面会重新检查权限。撤销访问或删除文档后，对方自动返回 Markdown 主页，协作连接被关闭；离线用户重新联网时也会检查权限。
+
+## 11. 多人实时编辑与离线恢复
+
+服务端同时开启 `MARKDOWN_SHARING_ENABLED=true` 和 `MARKDOWN_COLLAB_ENABLED=true`，重启后使用两个独立浏览器会话登录不同账号。不要用同一会话的多个标签页模拟不同账号。
+
+1. 所有者分享给 Editor，双方打开同一篇 Markdown 文档。
+2. 顶栏显示 Connected、在线协作者；对方的光标/选区会以不同颜色显示。源码和预览自动同步，无需刷新。
+3. Ctrl+Z / Ctrl+Shift+Z 撤销或恢复自己的操作，保留其他协作者的修改。
+4. 断网时显示 Offline；已打开的编辑页仍可输入，编辑保存在该账号的浏览器 IndexedDB。恢复网络后自动合并。无需重新输入，也不要清除站点数据。
+5. 页面关闭前尚未同步的协作更新会在重新联网并打开同一文档时恢复。新打开的页面仍需要联网完成登录与权限检查；本应用不提供离线启动整个网站的 Service Worker。
+6. Saved 表示服务端已完成本轮内容持久化；Connected 只表示连接状态。搜索与反链在镜像保存后更新，通常不到 1 秒。
+7. 如果管理员回滚后修改了文档版本，旧缓存不会自动覆盖新版本。页面会提示 Previous offline draft preserved，可下载旧草稿手工比对，再复制需要的内容；确认无用后再丢弃旧草稿。
+
+## 12. 启用、迁移与回滚
+
+本地开发，在启动后端的同一个 PowerShell 终端设置变量；项目不会自动把根 `.env` 注入 `npm run dev`：
+
+```powershell
+Set-Location V:\sortpiece\Software-Engineering-Project\server
+$env:MARKDOWN_SHARING_ENABLED = 'true'
+$env:MARKDOWN_COLLAB_ENABLED = 'true'
+npm.cmd run dev
+```
+
+前端在另一个终端执行 `npm.cmd run dev`。Docker 部署在根 `.env` 设置同名变量，执行 `docker compose up -d --build`；分离部署使用 `docker compose -f compose.split.yml up -d --build`。升级前备份数据库并确认当前 MONGO_URI / DB_NAME；本轮不需要批量迁移脚本。
+
+旧 Markdown 文档首次打开时自动播种 CRDT。并发打开使用同一份种子；空文档也会记录已播种状态。标题、标签、所有者保留。协作开启后，Y.Text 是正文权威，REST PUT 返回 409；镜像继续支持搜索、标签与双链。
+
+回滚操作：
+
+1. 先让在线用户等到 Saved；离线用户若有未同步修改，应保留浏览器数据，必要时先导出当前 Markdown。
+2. 在后端终端 Ctrl+C 正常停止服务，或正常停止应用容器。优雅退出会回写 debounce 内的修改；不要用任务管理器强制结束来代替正常回滚。
+3. 设置 `MARKDOWN_COLLAB_ENABLED=false` 并重启，回到 REST + revision 自动保存；可保留分享开关继续邀请式共享，也可同时设 `MARKDOWN_SHARING_ENABLED=false` 恢复 owner-only。
+4. 刷新文档，确认正文、标题、标签保留，继续编辑并等待 Saved。关闭分享时，非所有者无法访问；邀请记录保留。
+5. 重新开启两个开关并重启，使用相同账号重新打开文档。回滚期间的 REST 保存会使旧协作缓存失效，重新以最新正文播种；旧离线草稿可下载查看，不自动覆盖新版本。
+6. 回滚无需删除 `crdtState`、邀请、文档或数据库卷，也不需要执行逆向迁移脚本。
+
+协作房间保存在单个服务进程内；当前部署应使用单个后端实例。多实例部署需要共享房间路由或协作服务，不应让同一文档同时进入互不通信的进程。

@@ -17,6 +17,16 @@
 
 ---
 
+## Markdown 分享与实时协作
+
+`MARKDOWN_SHARING_ENABLED=true` 开启邀请式分享；`MARKDOWN_COLLAB_ENABLED=true` 开启 Markdown Yjs 房间、远程光标和离线合并。两个开关默认 false；在启动进程的环境中设置，或通过 Compose 的 `.env` 传递，变更后重启应用。
+
+Markdown 的 GET metadata 返回 `collaborationEnabled`；协作 GET markdown 返回 CRDT bootstrap 与缓存版本。协作开启时 PUT markdown 返回 409，正文由 Y.Text 持久化并镜像为 markdown/searchText/outgoingLinks。首次播种使用原子比较更新，不修改标题、标签和所有者。
+
+所有文档消息都重新检查权限；Reader 的 sync step2 和 update 均不能写入。调整权限会关闭对应连接并发送通知。通知重连后客户端会重新核验权限。正常退出服务会等待持久化；关闭协作可退回 REST 自动保存，REST 修改会使旧 CRDT 缓存版本失效。
+
+完整启用、离线恢复与回滚步骤见 [用户手册](../docs/阶段四-添加makdown编辑器/MARKDOWN_USER_GUIDE.md#12-启用迁移与回滚)。当前只支持单后端进程承载房间。
+
 ## Overview
 
 This server is a **unified backend** that hosts:

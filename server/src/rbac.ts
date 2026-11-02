@@ -75,11 +75,16 @@ export interface ResolvedAccess
   abilities: ReturnType<typeof getAbilities>
 }
 
-/** Markdown P0 has no share, comments or rich-text history capabilities. */
+export const markdownCollabEnabled = () => process.env.MARKDOWN_COLLAB_ENABLED === 'true'
+export const markdownSharingEnabled = () => process.env.MARKDOWN_SHARING_ENABLED === 'true'
+export const MARKDOWN_SHARE_ROLES: Role[] = [Role.READER, Role.COMMENTER, Role.EDITOR]
+
+/** Markdown sharing is invitation-only; comments/history remain unavailable. */
 export function getDocumentAbilities(doc: DocumentDoc, role: Role | null): ReturnType<typeof getAbilities> {
   if (doc.editorType !== 'markdown') return getAbilities(role)
   const owner = role === Role.OWNER
-  return { canView: owner, canEdit: owner, canDelete: owner, canShare: false, canComment: false, canViewHistory: false }
+  const invited = markdownSharingEnabled() && role !== null && MARKDOWN_SHARE_ROLES.includes(role)
+  return { canView: owner || invited, canEdit: owner || (invited && role === Role.EDITOR), canDelete: owner, canShare: owner && markdownSharingEnabled(), canComment: false, canViewHistory: false }
 }
 
 /**
@@ -102,10 +107,16 @@ export async function resolveAccess(
     .findOne({ docId, deletedAt: null })
   if (!doc) return null
 
-  // Do not apply the rich editor's default link role or legacy invitations to Markdown.
+  // Markdown requires an explicit supported invitation; rich link defaults never apply.
   if (doc.editorType === 'markdown') {
-    if (!userId || doc.ownerUserId?.toString() !== userId) return null
-    return { doc, role: Role.OWNER, abilities: getDocumentAbilities(doc, Role.OWNER) }
+    if (!userId || !ObjectId.isValid(userId)) return null
+    let role: Role | null = doc.ownerUserId?.toString() === userId ? Role.OWNER : null
+    if (!role && markdownSharingEnabled()) {
+      const invitation = await db.collection<DocumentAccessDoc>('document_access').findOne({ documentId: doc._id!, userId: new ObjectId(userId), role: { $in: MARKDOWN_SHARE_ROLES } })
+      role = invitation?.role ?? null
+    }
+    const abilities = getDocumentAbilities(doc, role)
+    return abilities.canView ? { doc, role, abilities } : null
   }
 
   let role: Role | null = null

@@ -30,6 +30,8 @@ services:
       PORT: 3001
       MONGO_URI: mongodb://mongo:27017
       DB_NAME: ${DB_NAME:-nexadoc}
+      MARKDOWN_SHARING_ENABLED: ${MARKDOWN_SHARING_ENABLED:-false}
+      MARKDOWN_COLLAB_ENABLED: ${MARKDOWN_COLLAB_ENABLED:-false}
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:3001}
       CLIENT_DIST: /app/public

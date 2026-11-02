@@ -1,11 +1,16 @@
 import * as Y from 'yjs'
 import { getDB } from './db'
 import type { DocumentDoc } from './types'
+import { analyzeMarkdown } from './markdown/analyze'
+import { resolveLinkTargets } from './markdown/resolveLinkTargets'
 
 const DEBOUNCE_MS = 1000
 const timers = new Map<string, NodeJS.Timeout>()
 // 记录已绑定的文档，供优雅退出时立即回写（否则 debounce 窗口内的更新会丢）
 const boundDocs = new Map<string, Y.Doc>()
+const markdownWriters = new WeakMap<Y.Doc, string>()
+export function setMarkdownWriter(doc: Y.Doc, userId: string) { markdownWriters.set(doc, userId) }
+const markdownEpochs = new WeakMap<Y.Doc, number>()
 // 退出中标志：此时 y-websocket 断连触发的 writeState 交给 flushAll 统一落库，避免与 closeDB 竞态
 let closing = false
 
@@ -50,7 +55,11 @@ export const mongoPersistence = {
     console.log(`[persistence] bindState: ${docName}`)
     try {
       const db = getDB()
-      const existing = await db.collection<DocumentDoc>('documents').findOne({ docId: docName })
+      let existing: DocumentDoc | null = await db.collection<DocumentDoc>('documents').findOne({ docId: docName })
+      if (existing?.editorType === 'markdown') {
+        existing = await (await import('./markdown/crdt')).ensureMarkdownState(docName)
+        markdownEpochs.set(ydoc, existing.markdownEpoch ?? 0)
+      }
       const state = toBuffer(existing?.crdtState)
 
       if (state.length > 0) {
@@ -78,6 +87,13 @@ export const mongoPersistence = {
         scheduleSave(docName, ydoc)
       })
       boundDocs.set(docName, ydoc)
+      ydoc.on('destroy', () => {
+        if (boundDocs.get(docName) === ydoc) {
+          boundDocs.delete(docName)
+          const timer = timers.get(docName); if (timer) clearTimeout(timer)
+          timers.delete(docName)
+        }
+      })
     } catch (err) {
       console.error(`[persistence] bindState ERROR for ${docName}:`, err)
       throw err
@@ -144,19 +160,45 @@ function scheduleSave(docName: string, ydoc: Y.Doc): void
   if (existing) clearTimeout(existing)
   const timer = setTimeout(() =>
   {
-    saveImmediate(docName, ydoc)
+    void saveImmediate(docName, ydoc).catch((error) => console.error('[persistence] save failed', error))
     timers.delete(docName)
   }, DEBOUNCE_MS)
   timers.set(docName, timer)
 }
 
-async function saveImmediate(docName: string, ydoc: Y.Doc): Promise<void>
+const writes = new Map<string, Promise<void>>()
+async function saveImmediate(docName: string, ydoc: Y.Doc): Promise<void> {
+  const operation = (writes.get(docName) ?? Promise.resolve()).catch(() => {}).then(() => persistDocument(docName, ydoc))
+  writes.set(docName, operation)
+  try { await operation } finally { if (writes.get(docName) === operation) writes.delete(docName) }
+}
+
+async function persistDocument(docName: string, ydoc: Y.Doc): Promise<void>
 {
   const db = getDB()
   const state = Y.encodeStateAsUpdate(ydoc)
+  const markdownSnapshot = ydoc.getText('markdown').toString()
+  const writer = markdownWriters.get(ydoc)
   const buf = Buffer.from(state)
 
+  const existing = await db.collection<DocumentDoc>('documents').findOne({ docId: docName })
+  if (existing?.editorType === 'markdown') {
+    const epoch = markdownEpochs.get(ydoc)
+    if (epoch !== undefined && epoch !== (existing.markdownEpoch ?? 0)) return
+    const markdown = markdownSnapshot
+    const changed = markdown !== (existing.markdown ?? '')
+    const analysis = changed ? analyzeMarkdown(markdown) : null
+    const outgoingLinks = analysis ? await resolveLinkTargets(analysis.outgoingLinks, writer ?? existing.ownerUserId!.toString(), existing.outgoingLinks) : existing.outgoingLinks
+    await db.collection<DocumentDoc>('documents').updateOne({ _id: existing._id, deletedAt: null, markdownEpoch: existing.markdownEpoch ?? 0 }, {
+      $set: { crdtState: buf, crdtStateSize: buf.length,
+        ...(changed ? { markdown, searchText: analysis!.searchText, outgoingLinks, markdownIndexedAt: new Date(), updatedAt: new Date(Math.max(Date.now(), existing.updatedAt.getTime() + 1)) } : {}),
+      },
+      $inc: { updateCount: 1, ...(changed ? { revision: 1 } : {}) },
+    })
+    return
+  }
   console.log(`[persistence] saveImmediate: ${docName} (${buf.length} bytes)`)
+
 
   await db.collection<DocumentDoc>('documents').updateOne(
     { docId: docName },

@@ -5,10 +5,13 @@ import type { MarkdownSession } from './MarkdownSession'
 export interface MarkdownDraft { markdown: string; revision: number; savedAt: number }
 export interface SessionSnapshot {
   status: MarkdownSaveStatus
+  connection?: 'connected' | 'connecting' | 'disconnected'
+  peers?: Array<{ id: string; name: string; color: string }>
   revision: number
   dirty: boolean
   error: string
   draftWarning: string
+  previousDraft?: string
   recovery: MarkdownDraft | null
   conflict: MarkdownDocumentPayload | null
 }

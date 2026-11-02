@@ -16,7 +16,8 @@ import { connectDB, getDB, closeDB } from './db'
 import { mongoPersistence, flushAll, beginShutdown } from './persistence'
 import { register, login, requireAuth, AuthRequest } from './auth'
 import { addConnection, removeConnection, closeAllConnections } from './notifications'
-import { resolveAccess } from './rbac'
+import { resolveAccess, markdownCollabEnabled } from './rbac'
+import { connectMarkdown, flushMarkdownRooms } from './markdown/collaboration'
 import { decodeDocName } from './docId'
 import type { WebSocket } from 'ws'
 import documentsRouter from './routes/documents'
@@ -122,7 +123,7 @@ function isSyncUpdate(data: Buffer | ArrayBuffer): boolean
     const messageType = decoding.readVarUint(decoder)
     if (messageType !== messageSync) return false
     const syncType = decoding.readVarUint(decoder)
-    return syncType === syncStepUpdate
+    return syncType === syncStepUpdate || syncType === 1
   } catch {
     return false
   }
@@ -151,6 +152,7 @@ wss.on('connection', (ws, req) =>
 })
 
 // ── 通知 WebSocket Server（用户级实时推送）──
+const markdownWss = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 * 1024 })
 const notifyWss = new WebSocketServer({ noServer: true })
 
 notifyWss.on('connection', (ws: WebSocket, userId: string) =>
@@ -218,8 +220,10 @@ server.on('upgrade', (request, socket, head) =>
     }
 
     let userId: string
+    let expiresAt: number | undefined
     try {
-      userId = (jwt.verify(token, JWT_SECRET) as { id: string }).id
+      const claims = jwt.verify(token, JWT_SECRET) as { id: string; exp?: number }
+      userId = claims.id; expiresAt = claims.exp ? claims.exp * 1000 : undefined
     } catch {
       rejectUpgrade(socket, 401, 'Unauthorized')
       return
@@ -234,7 +238,8 @@ server.on('upgrade', (request, socket, head) =>
           return
         }
         if (access.doc.editorType === 'markdown') {
-          rejectUpgrade(socket, 403, 'Markdown Collaboration Unavailable')
+          if (!markdownCollabEnabled()) { rejectUpgrade(socket, 403, 'Markdown Collaboration Unavailable'); return }
+          markdownWss.handleUpgrade(request, socket, head, (ws) => { void connectMarkdown(ws, access.doc.docId, userId, expiresAt, url.searchParams.get('epoch')) })
           return
         }
         // 无查看权限 → 拒绝
@@ -296,6 +301,8 @@ async function shutdown(signal: string): Promise<void>
   force.unref()
 
   try {
+    await flushMarkdownRooms()
+
     // 0) 进入退出态：此后 y-websocket 断连触发的 writeState 会被跳过（由 flushAll 统一回写）
     beginShutdown()
 
@@ -306,9 +313,11 @@ async function shutdown(signal: string): Promise<void>
     // 2) 断开两条 WebSocket 通道上的客户端后关闭服务
     closeAllConnections()
     for (const ws of wss.clients) ws.terminate()
+    for (const ws of markdownWss.clients) ws.terminate()
     await Promise.all([
       new Promise<void>((resolve) => notifyWss.close(() => resolve())),
       new Promise<void>((resolve) => wss.close(() => resolve())),
+      new Promise<void>((resolve) => markdownWss.close(() => resolve())),
     ])
 
     // 3) 把 debounce 窗口（1s）内尚未落库的编辑立即写入 MongoDB
@@ -326,6 +335,9 @@ async function shutdown(signal: string): Promise<void>
   }
 }
 
+if (process.env.NODE_ENV === 'test' && process.send) process.on('message', (message) => {
+  if (message === 'shutdown') void shutdown('test-fixture')
+})
 process.on('SIGTERM', () => { void shutdown('SIGTERM') })
 process.on('SIGINT', () => { void shutdown('SIGINT') })
 

@@ -1,8 +1,10 @@
 import { Router } from 'express'
-import { ObjectId, type Filter } from 'mongodb'
+import { type Filter } from 'mongodb'
 import type { AuthRequest } from '../auth'
 import { getDB } from '../db'
-import { resolveAccess } from '../rbac'
+import { ensureMarkdownState } from '../markdown/crdt'
+import { toBuffer } from '../persistence'
+import { resolveAccess, markdownCollabEnabled } from '../rbac'
 import type { DocumentDoc } from '../types'
 import { MAX_MARKDOWN_BYTES } from '../markdown/metadata'
 import { analyzeMarkdown } from '../markdown/analyze'
@@ -17,7 +19,10 @@ function payload(doc: DocumentDoc) {
 router.get('/:docId/markdown', async (req: AuthRequest, res) => {
   const access = await resolveAccess(String(req.params.docId), req.user!.id)
   if (!access || access.doc.editorType !== 'markdown') { res.status(404).json({ error: 'Document not found' }); return }
-  res.json(payload(access.doc))
+  if (markdownCollabEnabled()) {
+    const doc = await ensureMarkdownState(access.doc.docId)
+    res.json({ ...payload(doc), collaborationEnabled: true, collaborationEpoch: doc.markdownEpoch ?? 0, crdtState: toBuffer(doc.crdtState).toString('base64') })
+  } else res.json(payload(access.doc))
 })
 
 router.put('/:docId/markdown', async (req: AuthRequest, res) => {
@@ -25,7 +30,8 @@ router.put('/:docId/markdown', async (req: AuthRequest, res) => {
   const userId = req.user!.id
   const access = await resolveAccess(docId, userId)
   if (!access || access.doc.editorType !== 'markdown') { res.status(404).json({ error: 'Document not found' }); return }
-  if (process.env.MARKDOWN_COLLAB_ENABLED === 'true') { res.status(409).json({ error: 'Collaboration enabled' }); return }
+  if (!access.abilities.canEdit) { res.status(403).json({ error: 'Insufficient permissions' }); return }
+  if (markdownCollabEnabled()) { res.status(409).json({ error: 'Collaboration enabled' }); return }
   const { markdown, baseRevision } = req.body ?? {}
   if (typeof markdown !== 'string') { res.status(400).json({ error: 'Markdown content must be a string' }); return }
   if (Buffer.byteLength(markdown, 'utf8') > MAX_MARKDOWN_BYTES) { res.status(400).json({ error: 'Markdown content too large' }); return }
@@ -33,15 +39,15 @@ router.put('/:docId/markdown', async (req: AuthRequest, res) => {
     res.status(400).json({ error: 'Invalid baseRevision' }); return
   }
   const documents = getDB().collection<DocumentDoc>('documents')
-  const scope: Filter<DocumentDoc> = { docId, ownerUserId: new ObjectId(userId), editorType: 'markdown', deletedAt: null }
+  const scope: Filter<DocumentDoc> = { docId, editorType: 'markdown', deletedAt: null }
   const revisionFilter: Filter<DocumentDoc> = baseRevision === 0
     ? { $or: [{ revision: 0 }, { revision: { $exists: false } }] } : { revision: baseRevision }
   const analysis = analyzeMarkdown(markdown)
   const outgoingLinks = await resolveLinkTargets(analysis.outgoingLinks, userId, access.doc.outgoingLinks)
   const now = new Date(Math.max(Date.now(), access.doc.updatedAt.getTime() + 1))
   const updated = await documents.findOneAndUpdate({ ...scope, ...revisionFilter }, {
-    $set: { markdown, searchText: analysis.searchText, outgoingLinks, markdownIndexedAt: now, updatedAt: now },
-    $inc: { revision: 1 },
+    $set: { crdtState: Buffer.alloc(0), crdtStateSize: 0, markdown, searchText: analysis.searchText, outgoingLinks, markdownIndexedAt: now, updatedAt: now },
+    $inc: { revision: 1, markdownEpoch: 1 },
   }, { returnDocument: 'after' })
   if (!updated) {
     const current = await documents.findOne(scope)

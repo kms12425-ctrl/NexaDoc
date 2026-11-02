@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb'
+import { markdownScope } from './access'
 import { getDB } from '../db'
 import type { DocumentDoc, OutgoingLink } from '../types'
 import type { MarkdownAnalysis } from './analyze'
@@ -18,15 +18,22 @@ export async function resolveLinkTargets(
   for (const link of previousLinks) {
     if (link.targetDocId && !previousTargetIds.has(link.title)) previousTargetIds.set(link.title, link.targetDocId)
   }
+  const { filter } = await markdownScope(ownerId)
   const targets = await getDB().collection<DocumentDoc>('documents').find({
-    ownerUserId: new ObjectId(ownerId), editorType: 'markdown', deletedAt: null,
-    $or: [
+    ...filter,
+    $and: [{ $or: [
       { title: { $in: [...new Set(links.map((link) => link.title))] } },
       { docId: { $in: [...new Set(previousTargetIds.values())] } },
-    ],
+    ] }],
   }, { projection: { title: 1, docId: 1 } }).toArray()
+  // An editor may not have access to an existing link's target. Preserve its
+  // trusted stored identity on unchanged links; the links API filters visibility
+  // per viewer. Only newly resolved titles use the saving user's visible scope.
+  const previousTargets = previousTargetIds.size ? await getDB().collection<DocumentDoc>('documents').find({
+    docId: { $in: [...new Set(previousTargetIds.values())] }, editorType: 'markdown', deletedAt: null,
+  }, { projection: { docId: 1 } }).toArray() : []
   const ids = new Map<string, string | null>()
-  const validDocIds = new Set<string>()
+  const validDocIds = new Set<string>(previousTargets.map((doc) => doc.docId))
   for (const target of targets) {
     validDocIds.add(target.docId)
     ids.set(target.title, ids.has(target.title) ? null : target.docId)

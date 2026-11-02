@@ -15,7 +15,7 @@ export default defineConfig({
   },
   webServer: {
     command: 'npm run build -- --outDir playwright-report/a123/dist && npm --prefix ../server run build && node ../server/scripts/markdown-e2e-server.cjs',
-    env: { VITE_MARKDOWN_API_ENABLED: '', VITE_API_URL: '', VITE_YJS_URL: '' },
+    env: { VITE_MARKDOWN_API_ENABLED: '', VITE_API_URL: '', VITE_YJS_URL: '', MARKDOWN_SHARING_ENABLED: 'false', MARKDOWN_COLLAB_ENABLED: 'false' },
     url: 'http://127.0.0.1:3018/health',
     timeout: 90000,
     reuseExistingServer: false,

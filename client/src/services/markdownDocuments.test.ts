@@ -20,7 +20,7 @@ describe('Markdown document API', () => {
     vi.stubEnv('VITE_MARKDOWN_API_ENABLED', 'false')
     expect(isMarkdownApiEnabled()).toBe(false)
   })
-  it('requests the Markdown type and isolates owned, visible Markdown documents', async () => {
+  it('requests the Markdown type and isolates accessible Markdown documents', async () => {
     let requestedType: string | null = null
     server.use(http.get(url, ({ request }) => {
       requestedType = new URL(request.url).searchParams.get('type')
@@ -36,7 +36,7 @@ describe('Markdown document API', () => {
     const result = await markdownDocumentsApi.list()
 
     expect(requestedType).toBe('markdown')
-    expect(result.map(({ id }) => id)).toEqual(['newer', 'md-1'])
+    expect(result.map(({ id }) => id)).toEqual(['newer', 'md-1', 'shared'])
   })
 
   it('sends the actual template source in the creation request', async () => {

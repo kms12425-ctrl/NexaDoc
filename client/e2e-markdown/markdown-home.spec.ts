@@ -38,10 +38,15 @@ async function mockMarkdownHome(page: Page) {
         await route.fulfill({ json: [
           ...rows.filter((row) => !deleted.includes(row.id)),
           { ...initial, id: 'rich', name: 'Rich document', editorType: 'rich' },
-          { ...initial, id: 'shared', name: 'Shared document', shared: true },
+          { ...initial, id: 'shared', name: 'Shared document', shared: true, abilities: { canView: true, canEdit: false, canDelete: false, canShare: false } },
         ] })
       }
     }
+  })
+  await page.route('**/api/search?*', (route) => {
+    const query = new URL(route.request().url()).searchParams.get('q')?.toLocaleLowerCase() ?? ''
+    const result = rows.filter((row) => !deleted.includes(row.id) && row.name.toLocaleLowerCase().includes(query))
+    return route.fulfill({ json: result })
   })
   await page.route('**/api/documents/*/metadata', (route) => route.fulfill({ json: { ...initial, id: 'md-created', name: created.at(-1)?.name ?? initial.name } }))
   await page.route('**/api/documents/*/markdown', (route) => route.fulfill({ json: { markdown: created.at(-1)?.markdown ?? '# Project Plan', revision: 0, updatedAt: 1 } }))
@@ -65,9 +70,10 @@ test.describe('Markdown home and templates', () => {
     await page.goto('/markdown')
 
     await expect(page.getByRole('article', { name: 'Open document: Project Plan' })).toBeVisible()
-    await expect(page.getByRole('article')).toHaveCount(2)
+    await expect(page.getByRole('region', { name: 'My Markdown documents' }).getByRole('article')).toHaveCount(2)
     expect(fixtures.listTypes).toEqual(['markdown'])
-    await expect(page.getByText('Shared with me', { exact: true })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: /Shared with me/ })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Shared Markdown documents' }).getByRole('article')).toHaveCount(1)
     await expect(page.getByRole('group', { name: 'Template categories' }).getByRole('button')).toHaveCount(5)
     await page.getByRole('group', { name: 'Template categories' }).getByRole('button', { name: 'Business' }).click()
     await expect(page.getByRole('button', { name: 'Meeting Notes', exact: true })).toBeVisible()
@@ -134,7 +140,7 @@ test.describe('Markdown home and templates', () => {
     expect(fixtures.created).toHaveLength(2)
   })
 
-  test('filters Chinese titles and updates the URL without a full-text-search request', async ({ page }) => {
+  test('searches Chinese titles through the server and updates the URL', async ({ page }) => {
     await mockMarkdownHome(page)
     await page.goto('/markdown?q=project')
     await expect(page.getByRole('article')).toHaveCount(1)
@@ -145,7 +151,7 @@ test.describe('Markdown home and templates', () => {
     await expect(page.getByRole('article')).toHaveCount(1)
     await expect(page).toHaveURL(/q=/)
     await search.press('Escape')
-    await expect(page.getByRole('article')).toHaveCount(2)
+    await expect(page.getByRole('region', { name: 'My Markdown documents' }).getByRole('article')).toHaveCount(2)
     await expect(page).toHaveURL(/\/markdown$/)
   })
 
@@ -172,14 +178,14 @@ test.describe('Markdown home and templates', () => {
     await expect(page.getByRole('alert')).toHaveText(/List temporarily unavailable/)
     await expect(page.getByRole('button', { name: 'Blank Markdown', exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Try again' }).click()
-    await expect(page.getByRole('article')).toHaveCount(2)
+    await expect(page.getByRole('region', { name: 'My Markdown documents' }).getByRole('article')).toHaveCount(2)
   })
 
   test('keeps the home and picker usable at 375px', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 375, height: 812 })
     await mockMarkdownHome(page)
     await page.goto('/markdown')
-    await expect(page.getByRole('article')).toHaveCount(2)
+    await expect(page.getByRole('region', { name: 'My Markdown documents' }).getByRole('article')).toHaveCount(2)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     const searchBounds = await page.getByRole('searchbox').boundingBox()
     expect(searchBounds!.width).toBeGreaterThan(100)

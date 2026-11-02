@@ -55,9 +55,11 @@ describe('LoginPage', () => {
 
   it('shows loading text on submit', async () => {
     const user = userEvent.setup()
+    let release!: () => void
+    const responseGate = new Promise<void>((resolve) => { release = resolve })
     server.use(
       http.post(`${API_URL}/api/auth/login`, async () => {
-        await new Promise((r) => setTimeout(r, 500))
+        await responseGate
         return HttpResponse.json({
           token: 'fake-token',
           user: { id: 'u1', username: 'alice', displayName: 'alice', avatarColor: '#fff' },
@@ -71,9 +73,13 @@ describe('LoginPage', () => {
     await user.type(screen.getByPlaceholderText('Enter password'), 'pass123')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    await waitFor(() => {
-      expect(screen.getByText(/Signing in/i)).toBeInTheDocument()
-    })
+    try {
+      await waitFor(() => {
+        expect(screen.getByText(/Signing in/i)).toBeInTheDocument()
+      })
+    } finally { release() }
+    // Finish the request before tearing down jsdom and clearing auth storage.
+    await waitFor(() => expect(screen.getByRole('button', { name: /sign in/i })).toBeEnabled())
   })
 
   it('displays error on login failure', async () => {

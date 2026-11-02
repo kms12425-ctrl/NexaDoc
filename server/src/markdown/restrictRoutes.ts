@@ -1,5 +1,6 @@
 import type { NextFunction, Response } from 'express'
 import { getDB } from '../db'
+import { resolveAccess } from '../rbac'
 import type { AuthRequest } from '../auth'
 import type { DocumentDoc } from '../types'
 
@@ -10,11 +11,13 @@ export async function restrictMarkdownRoutes(req: AuthRequest, res: Response, ne
     { projection: { editorType: 1, ownerUserId: 1, deletedAt: 1 } },
   )
   if (doc?.editorType !== 'markdown') { next(); return }
-  if (doc.deletedAt || doc.ownerUserId?.toString() !== req.user!.id) {
+  const access = await resolveAccess(String(req.params.docId), req.user!.id)
+  if (!access) {
     res.status(404).json({ error: 'Document not found' })
     return
   }
-  if (/^\/(?:share|access|comments|snapshots|preview)(?:\/|$)/i.test(req.path)) {
+  if (/^\/(?:comments|snapshots|preview)(?:\/|$)/i.test(req.path) ||
+      (/^\/(?:share|access)(?:\/|$)/i.test(req.path) && !access.abilities.canShare)) {
     res.status(403).json({ error: 'This feature is not available for Markdown documents' })
     return
   }

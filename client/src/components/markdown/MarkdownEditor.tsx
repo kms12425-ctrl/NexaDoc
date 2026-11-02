@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { documentsApi, getToken, type DocumentWithAbilities } from '../../services/api'
 import { useAuth } from '../../contexts/AuthContext'
 import { createMarkdownTransport, MarkdownApiError } from '../../markdown/contentApi'
+import { CollabMarkdownSession } from '../../markdown/session/CollabMarkdownSession'
+import { useMarkdownNotifications } from '../../markdown/useMarkdownNotifications'
 import { LocalMarkdownSession, type SessionSnapshot } from '../../markdown/session/LocalMarkdownSession'
 import AppMenu from '../AppMenu'
 import MarkdownSource from './MarkdownSource'
@@ -12,6 +14,7 @@ import type { MarkdownSourceHandle } from './MarkdownSource'
 import BacklinksPanel from './BacklinksPanel'
 import { useNavigate } from 'react-router-dom'
 
+const ShareModal = lazy(() => import('../ShareModal'))
 const ExportMenu = lazy(() => import('./ExportMenu'))
 
 const statusLabels = { idle: 'Unsaved changes', saving: 'Saving…', saved: 'Saved', offline: 'Offline — changes kept in this browser', conflict: 'Conflict — saving paused' }
@@ -40,7 +43,7 @@ function ConflictDialog({ revision, busy, onClose, onResolve }: { revision: numb
   </div></div>
 }
 
-function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: { session: LocalMarkdownSession; readOnly: boolean; docId: string; initialTitle: string; initialTags: string[] }) {
+function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: { session: LocalMarkdownSession | CollabMarkdownSession; readOnly: boolean; docId: string; initialTitle: string; initialTags: string[] }) {
   const [markdown, setMarkdown] = useState(session.getMarkdown())
   const [state, setState] = useState<SessionSnapshot>(session.getSnapshot())
   const [titleTargets, setTitleTargets] = useState<ReadonlyMap<string, string | null>>(new Map())
@@ -49,10 +52,14 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
   const [conflictOpen, setConflictOpen] = useState(false)
   const [layout, setLayout] = useState<'source' | 'split' | 'preview'>('split')
   const [title, setTitle] = useState(initialTitle)
+  useEffect(() => setTitle(initialTitle), [initialTitle])
   const [tags, setTags] = useState(initialTags)
+  useEffect(() => setTags(initialTags), [initialTags])
   const [tagText, setTagText] = useState('')
   const [metadataBusy, setMetadataBusy] = useState(false)
   const [metadataError, setMetadataError] = useState('')
+  const metadataQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const metadataPendingRef = useRef(0)
   const sourceRef = useRef<MarkdownSourceHandle>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const syncingScrollRef = useRef(false)
@@ -68,7 +75,7 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
       if (!active) return
       const map = new Map<string, string | null>()
       for (const doc of documents) {
-        if (doc.editorType !== 'markdown' || doc.shared) continue
+        if (doc.editorType !== 'markdown') continue
         map.set(doc.name, map.has(doc.name) ? null : doc.id)
       }
       setTitleTargets(map)
@@ -97,12 +104,23 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
     try { if (mode === 'latest') await session.loadLatest(); else await session.overwriteConflict() }
     finally { setResolving(false) }
   }
-  const saveMetadata = async (changes: { title?: string; tags?: string[] }) => {
-    if (readOnly || metadataBusy) return
-    setMetadataBusy(true); setMetadataError('')
-    try { await documentsApi.updateMetadata(docId, changes) }
-    catch (error) { setMetadataError(error instanceof Error ? error.message : 'Unable to save document details.') }
-    finally { setMetadataBusy(false) }
+  const saveMetadata = (changes: { title?: string; tags?: string[] }) => {
+    if (readOnly) return
+    metadataPendingRef.current += 1
+    setMetadataBusy(true)
+    // A title blur can overlap tag input. Serialize both instead of silently
+    // dropping the later update while another metadata request is pending.
+    const operation = metadataQueueRef.current.then(async () => {
+      setMetadataError('')
+      try { await documentsApi.updateMetadata(docId, changes) }
+      catch (error) { setMetadataError(error instanceof Error ? error.message : 'Unable to save document details.') }
+      finally {
+        metadataPendingRef.current -= 1
+        if (metadataPendingRef.current === 0) setMetadataBusy(false)
+      }
+    })
+    metadataQueueRef.current = operation
+    return operation
   }
   const addTag = () => {
     const value = tagText.trim().replace(/^#+/, '').replace(/\s+/g, ' ')
@@ -129,8 +147,10 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
 
   return <>
     <div className="markdown-save-bar">
-      <span role="status" aria-live="polite">{readOnly ? 'Read only' : statusLabels[state.status]}</span>
+      <span role="status" aria-live="polite">{readOnly ? 'Read only' : state.connection && state.status === 'offline' ? 'Offline — changes kept in this browser' : statusLabels[state.status]}</span>
       <span className="markdown-revision">Revision {state.revision}</span>
+      {state.connection && <span role="status" aria-label="Collaboration connection">{state.connection === 'connected' ? 'Connected' : state.connection === 'connecting' ? 'Reconnecting…' : 'Offline — reconnecting'}</span>}
+      {state.peers && <span className="markdown-presence" aria-label="Online collaborators">{state.peers.length ? state.peers.map((peer) => <span key={peer.id} title={peer.name} style={{ color: peer.color }}>{peer.name}</span>) : 'Only you'}</span>}
       <Suspense fallback={<button type="button" className="export-menu-trigger" disabled>Export ▾</button>}>
         <ExportMenu title={title} getMarkdown={() => session.getMarkdown()} />
       </Suspense>
@@ -147,6 +167,15 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
     <MarkdownToolbar disabled={readOnly || !!state.recovery || resolving} onInsert={(value) => sourceRef.current?.insert(value)} onWrap={(prefix, suffix) => sourceRef.current?.wrap(prefix, suffix)} />
     {state.error && <p className="docs-error-banner" role="alert">{state.error} Your unsaved changes are still in the editor.</p>}
     {state.draftWarning && <p className="docs-info-banner" role="alert">{state.draftWarning}</p>}
+    {state.previousDraft !== undefined && session instanceof CollabMarkdownSession && <section className="markdown-recovery" aria-label="Previous offline draft">
+      <h2>Previous offline draft preserved</h2><p>The document version changed while you were offline. Review your earlier draft before copying changes into the current version.</p>
+      <button type="button" className="modal-create" onClick={() => {
+        const url = URL.createObjectURL(new Blob([state.previousDraft!], { type: 'text/markdown;charset=utf-8' }))
+        const link = document.createElement('a'); link.href = url; link.download = 'previous-offline-draft.md'; link.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      }}>Download previous offline draft</button>
+      <button type="button" className="modal-cancel" onClick={() => session.discardPreviousDraft()}>Discard previous offline draft</button>
+    </section>}
     {state.recovery && <section className="markdown-recovery" aria-label="Unsaved draft">
       <h2>Unsaved draft found</h2><p>A local draft is available. Recover it to review your changes, or keep the server version.</p>
       <div><button type="button" className="modal-create" onClick={() => session.recoverDraft()}>Recover draft</button><button type="button" className="modal-cancel" onClick={() => session.discardDraft()}>Use server version</button></div>
@@ -164,45 +193,68 @@ function EditorSession({ session, readOnly, docId, initialTitle, initialTags }: 
   </>
 }
 
-export default function MarkdownEditor({ metadata }: { metadata: DocumentWithAbilities }) {
+export default function MarkdownEditor({ metadata: initialMetadata }: { metadata: DocumentWithAbilities }) {
   const { user, logout } = useAuth()
-  const [session, setSession] = useState<LocalMarkdownSession | null>(null)
+  const [metadata, setMetadata] = useState(initialMetadata)
+  useEffect(() => setMetadata(initialMetadata), [initialMetadata.id])
+  const [session, setSession] = useState<LocalMarkdownSession | CollabMarkdownSession | null>(null)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  const [shareOpen, setShareOpen] = useState(false)
   const readOnly = metadata.abilities.canEdit === false
   const navigate = useNavigate()
+  const sessionRef = useRef(session); sessionRef.current = session
+  const refresh = async (reset = false) => {
+    try {
+      const next = await documentsApi.getMetadata(initialMetadata.id)
+      setMetadata(next)
+      if (reset) setAttempt((value) => value + 1)
+    } catch (reason) {
+      if (reason instanceof Error && reason.message === 'Unauthorized') logout()
+      sessionRef.current?.destroy()
+      navigate('/markdown', { replace: true, state: { notice: 'Access to this document was removed or it is no longer available.' } })
+    }
+  }
+  useMarkdownNotifications((notice) => {
+    if (notice.docId && notice.docId !== initialMetadata.id) return
+    if (notice.type === 'access-revoked') {
+      sessionRef.current?.destroy()
+      navigate('/markdown', { replace: true, state: { notice: 'Access to this document was removed.' } })
+    } else if (['connected', 'document-shared', 'document-metadata-changed'].includes(notice.type)) void refresh(notice.type === 'document-shared')
+  })
 
   useEffect(() => {
     if (!user) return
     let active = true
-    let current: LocalMarkdownSession | null = null
+    let current: LocalMarkdownSession | CollabMarkdownSession | null = null
     const controller = new AbortController()
     const token = getToken()
     const transport = createMarkdownTransport(metadata.id, token)
     setSession(null)
     setError('')
-    transport.load(controller.signal).then((initial) => {
+    transport.load(controller.signal).then(async (initial) => {
       if (!active) return
-      current = new LocalMarkdownSession({
+      current = initial.collaborationEnabled ? await CollabMarkdownSession.create({ docId: metadata.id, user, initial, readOnly, signal: controller.signal, onAccessChanged: () => { void refresh(true) } }) : new LocalMarkdownSession({
         docId: metadata.id, userId: user.id, initial, transport, readOnly,
         isAuthorized: () => getToken() === token && !!token,
         onUnauthorized: logout,
       })
-      setSession(current)
+      if (active) setSession(current); else current.destroy()
     }).catch((reason: unknown) => {
       if (!active) return
       if (reason instanceof MarkdownApiError && reason.status === 401) logout()
       setError(reason instanceof Error ? reason.message : 'Unable to load Markdown.')
     })
     return () => { active = false; controller.abort(); current?.destroy() }
-  }, [metadata.id, user?.id, attempt, readOnly, logout])
+  }, [metadata.id, user?.id, attempt, readOnly, metadata.collaborationEnabled, logout])
 
   return <div className="docs-shell markdown-workspace markdown-editor-shell">
     <header className="topbar"><div className="topbar-left">
       <AppMenu current="markdown-editor" />
       <Link className="back-btn" to="/markdown" aria-label="Back to Markdown documents">←</Link>
       <h1 className="markdown-editor-title">{metadata.name}</h1>
-    </div></header>
+    </div>{metadata.abilities.canShare && <button type="button" className="new-doc-btn" onClick={() => setShareOpen(true)}>Share</button>}</header>
+    {shareOpen && metadata.abilities.canShare && <Suspense fallback={<p role="status">Loading sharing…</p>}><ShareModal docId={metadata.id} editorType="markdown" canShare onClose={() => setShareOpen(false)} /></Suspense>}
     <main className="markdown-editor-main">
       {session ? <><EditorSession key={metadata.id} session={session} readOnly={readOnly} docId={metadata.id} initialTitle={metadata.name} initialTags={metadata.tags ?? []} /><BacklinksPanel docId={metadata.id} onNavigate={(id) => navigate(`/markdown/${encodeURIComponent(id)}`)} /></>
         : error ? <section className="route-status"><h2>Unable to load Markdown</h2><p role="alert">{error}</p><button type="button" className="new-doc-btn" onClick={() => setAttempt((value) => value + 1)}>Try again</button></section>

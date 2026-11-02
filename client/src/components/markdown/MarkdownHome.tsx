@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useMarkdownNotifications } from '../../markdown/useMarkdownNotifications'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { isMarkdownApiEnabled, markdownDocumentsApi, type MarkdownDocumentMeta } from '../../services/markdownDocuments'
 import { documentsApi } from '../../services/api'
@@ -14,6 +15,8 @@ import TagFilter from './TagFilter'
 export default function MarkdownHome() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [notice, setNotice] = useState((location.state as { notice?: string } | null)?.notice ?? '')
   const [params, setParams] = useSearchParams()
   const query = params.get('q') ?? ''
   const selectedTag = params.get('tag') ?? ''
@@ -22,6 +25,12 @@ export default function MarkdownHome() {
   const [loading, setLoading] = useState(enabled)
   const [loadError, setLoadError] = useState('')
   const [attempt, setAttempt] = useState(0)
+  useMarkdownNotifications((event) => {
+    if (['connected', 'document-shared', 'access-revoked', 'document-metadata-changed'].includes(event.type)) {
+      setAttempt((value) => value + 1)
+      if (event.type === 'document-shared') setNotice(`A document was shared with you: ${event.name ?? 'Markdown document'}`)
+    }
+  }, enabled)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingTemplate, setPendingTemplate] = useState<MarkdownTemplate | null>(null)
   const [name, setName] = useState('')
@@ -136,26 +145,39 @@ export default function MarkdownHome() {
     else next.delete('q')
     return next
   }, { replace: true })
+  const [searchError, setSearchError] = useState('')
+  const [searching, setSearching] = useState(false)
   const [searchResults, setSearchResults] = useState<MarkdownDocumentMeta[] | null>(null)
   useEffect(() => {
+    let active = true
+    setSearchError('')
     if (!enabled || (!query.trim() && !selectedTag)) {
-      setSearchResults(null)
+      setSearchResults(null); setSearching(false)
       return
     }
-
+    setSearchResults([]); setSearching(true)
     const timer = setTimeout(() => {
       documentsApi.searchMarkdown(query, selectedTag)
-        .then((result) => setSearchResults(result
-          .filter((item) => item.editorType === 'markdown')
-          .map(({ snippet: _snippet, highlights: _highlights, ...item }) => ({ ...item, editorType: 'markdown' as const })),
-        ))
-        .catch(() => setSearchResults([]))
-    }, 180)
-
-    return () => clearTimeout(timer)
-  }, [enabled, query, selectedTag])
+        .then((result) => { if (active) setSearchResults(result
+          .filter((item) => item.editorType === 'markdown' && item.abilities?.canView !== false)
+          .map((item) => ({ ...item, editorType: 'markdown' as const }))) })
+        .catch((error: unknown) => { if (active) setSearchError(error instanceof Error ? error.message : 'Unable to search documents.') })
+        .finally(() => { if (active) setSearching(false) })
+    }, 300)
+    return () => { active = false; clearTimeout(timer) }
+  }, [enabled, query, selectedTag, attempt])
   const visibleDocuments = searchResults ?? documents.filter((document) => (!selectedTag || document.tags?.some((tag) => tag.toLocaleLowerCase() === selectedTag.toLocaleLowerCase())) && document.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
   const setTag = (tag: string) => setParams((current) => { const next = new URLSearchParams(current); if (tag) next.set('tag', tag); else next.delete('tag'); return next }, { replace: true })
+
+  const filtering = !!query.trim() || !!selectedTag
+  const primaryDocuments = filtering ? visibleDocuments : visibleDocuments.filter((doc) => !doc.shared)
+  const sharedDocuments = documents.filter((doc) => doc.shared)
+  const renderCard = (document: MarkdownDocumentMeta) => <DocumentCard
+                  key={document.id} doc={document} shared={document.shared} tags={document.tags} snippet={document.snippet}
+                  preview={<div className="markdown-document-preview" aria-hidden="true"><span>M↓</span><strong>{document.name}</strong>{document.snippet && <p>{document.snippet}</p>}</div>}
+                  onOpen={() => navigate('/markdown/' + encodeURIComponent(document.id))}
+                  onDelete={document.abilities?.canDelete === true ? () => { setDeleteTarget(document); setDeleteError('') } : undefined}
+                />
 
   return (
     <div className="docs-shell markdown-workspace">
@@ -178,36 +200,36 @@ export default function MarkdownHome() {
           <button type="button" className="logout-btn" onClick={logout}>Sign out</button>
           <div className="search-box">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
-            <input type="search" className="search-input" placeholder="Search Markdown titles…" aria-label="Search Markdown" aria-describedby="markdown-search-help" readOnly={!enabled} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setQuery('') }} />
+            <input type="search" className="search-input" placeholder="Search Markdown…" aria-label="Search Markdown" aria-describedby="markdown-search-help" readOnly={!enabled} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setQuery('') }} />
           </div>
           <button type="button" className="new-doc-btn" onClick={() => setPickerOpen(true)}><span aria-hidden="true">＋</span>New document</button>
         </div>
       </header>
       <main className="docs-main">
+        {notice && <p role="status" className="docs-info-banner">{notice}</p>}
         <h1 className="visually-hidden">Your Markdown workspace</h1>
-        <p id="markdown-search-help" className="visually-hidden">Search documents by title.</p>
+        <p id="markdown-search-help" className="visually-hidden">Search accessible documents by title, content or tag.</p>
         {!enabled && <p className="docs-info-banner" role="status">Markdown document creation and storage are not available yet. You can explore the templates below.</p>}
         <MarkdownTemplateGallery onSelect={chooseTemplate} />
         <TagFilter items={tagCounts} selected={selectedTag} onSelect={setTag} />
         <div className="section-divider" />
         <section className="recent-section" aria-label="My Markdown documents">
-          <h2 className="section-label">{query.trim() ? 'Search results' : 'My documents'}<span className="doc-count">{visibleDocuments.length}</span></h2>
-          {loading ? <p className="docs-loading" role="status">Loading Markdown documents…</p>
-            : loadError ? <div className="docs-error-banner" role="alert"><p>{loadError}</p><button type="button" className="modal-cancel" onClick={() => setAttempt((value) => value + 1)}>Try again</button></div>
-              : visibleDocuments.length === 0 ? <div className="empty-state">
+          <h2 className="section-label">{filtering ? 'Search results' : 'My documents'}<span className="doc-count">{primaryDocuments.length}</span></h2>
+          {loading || searching ? <p className="docs-loading" role="status">Loading Markdown documents…</p>
+            : loadError || searchError ? <div className="docs-error-banner" role="alert"><p>{loadError || searchError}</p><button type="button" className="modal-cancel" onClick={() => setAttempt((value) => value + 1)}>Try again</button></div>
+              : primaryDocuments.length === 0 ? <div className="empty-state">
                 <span className="markdown-empty-icon" aria-hidden="true">M↓</span>
-                <h3>{query.trim() ? 'No documents found' : 'No documents yet'}</h3>
-                <p>{query.trim() ? 'Try a different title.' : enabled ? 'Choose a template to create your first Markdown document.' : 'Explore the templates while Markdown storage is being prepared.'}</p>
-                {!query.trim() && <button type="button" className="new-doc-btn" onClick={() => setPickerOpen(true)}>{enabled ? 'Create document' : 'Browse templates'}</button>}
+                <h3>{filtering ? 'No documents found' : 'No documents yet'}</h3>
+                <p>{filtering ? 'Try another keyword or tag.' : enabled ? 'Choose a template to create your first Markdown document.' : 'Explore the templates while Markdown storage is being prepared.'}</p>
+                {!filtering && <button type="button" className="new-doc-btn" onClick={() => setPickerOpen(true)}>{enabled ? 'Create document' : 'Browse templates'}</button>}
               </div> : <div className="docs-grid">
-                {visibleDocuments.map((document) => <DocumentCard
-                  key={document.id} doc={document} tags={document.tags} snippet={document.snippet}
-                  preview={<div className="markdown-document-preview" aria-hidden="true"><span>M↓</span><strong>{document.name}</strong>{document.snippet && <p>{document.snippet}</p>}</div>}
-                  onOpen={() => navigate('/markdown/' + encodeURIComponent(document.id))}
-                  onDelete={document.abilities?.canDelete === true ? () => { setDeleteTarget(document); setDeleteError('') } : undefined}
-                />)}
+                {primaryDocuments.map(renderCard)}
               </div>}
         </section>
+        {!filtering && sharedDocuments.length > 0 && <section className="recent-section" aria-label="Shared Markdown documents">
+          <h2 className="section-label">Shared with me<span className="doc-count">{sharedDocuments.length}</span></h2>
+          <div className="docs-grid">{sharedDocuments.map(renderCard)}</div>
+        </section>}
       </main>
       {pickerOpen && <MarkdownTemplatePicker onSelect={chooseTemplate} onClose={() => setPickerOpen(false)} />}
       {pendingTemplate && <CreateDocModal

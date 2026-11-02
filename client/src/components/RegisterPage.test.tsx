@@ -54,9 +54,11 @@ describe('RegisterPage', () => {
 
   it('shows loading text on submit', async () => {
     const user = userEvent.setup()
+    let release!: () => void
+    const responseGate = new Promise<void>((resolve) => { release = resolve })
     server.use(
       http.post(`${API_URL}/api/auth/register`, async () => {
-        await new Promise((r) => setTimeout(r, 500))
+        await responseGate
         return HttpResponse.json({
           token: 'fake-token',
           user: { id: 'u1', username: 'newuser', displayName: 'newuser', avatarColor: '#fff' },
@@ -70,9 +72,13 @@ describe('RegisterPage', () => {
     await user.type(screen.getByPlaceholderText('At least 6 characters'), 'pass123')
     await user.click(screen.getByRole('button', { name: /sign up/i }))
 
-    await waitFor(() => {
-      expect(screen.getByText(/Creating account/i)).toBeInTheDocument()
-    })
+    try {
+      await waitFor(() => {
+        expect(screen.getByText(/Creating account/i)).toBeInTheDocument()
+      })
+    } finally { release() }
+    // Finish the request before tearing down jsdom and clearing auth storage.
+    await waitFor(() => expect(screen.getByRole('button', { name: /sign up/i })).toBeEnabled())
   })
 
   it('displays error on registration failure', async () => {

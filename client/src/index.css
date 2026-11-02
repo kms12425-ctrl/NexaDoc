@@ -2049,3 +2049,6 @@ a:hover { text-decoration: underline; }
   .markdown-source, .markdown-preview, .markdown-preview-pane > div { height: 380px; }
   .markdown-preview { padding: 20px; }
 }
+
+.markdown-presence { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.markdown-presence > span { border: 1px solid currentColor; padding: 2px 8px; border-radius: 16px; }

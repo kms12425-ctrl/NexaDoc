@@ -2,8 +2,9 @@ import { Router } from 'express'
 import { ObjectId } from 'mongodb'
 import { getDB } from '../db'
 import { AuthRequest } from '../auth'
-import { Role } from '../rbac'
+import { Role, resolveAccess, MARKDOWN_SHARE_ROLES } from '../rbac'
 import { notifyUser } from '../notifications'
+import { disconnectMarkdown } from '../markdown/collaboration'
 import type { DocumentDoc, DocumentAccessDoc, UserDoc } from '../types'
 
 const router = Router()
@@ -14,7 +15,7 @@ const router = Router()
 router.get('/:docId/access', async (req: AuthRequest, res: any) =>
 {
   const db = getDB()
-  const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
+  const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId, deletedAt: null })
   if (!doc) {
     res.status(404).json({ error: 'Document not found' })
     return
@@ -69,7 +70,7 @@ router.get('/:docId/access', async (req: AuthRequest, res: any) =>
 router.post('/:docId/share', async (req: AuthRequest, res: any) =>
 {
   const db = getDB()
-  const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
+  const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId, deletedAt: null })
   if (!doc) {
     res.status(404).json({ error: 'Document not found' })
     return
@@ -87,12 +88,23 @@ router.post('/:docId/share', async (req: AuthRequest, res: any) =>
     return
   }
 
+  if (doc.editorType === 'markdown') {
+    const resolved = await resolveAccess(doc.docId, req.user!.id)
+    if (!resolved?.abilities.canShare) { res.status(403).json({ error: 'Only owner can share Markdown documents' }); return }
+    if (typeof req.body?.username !== 'string' || !req.body.username.trim() || (req.body.role !== undefined && !MARKDOWN_SHARE_ROLES.includes(req.body.role))) {
+      res.status(400).json({ error: 'Invalid Markdown invitation' }); return
+    }
+  }
+
   const targetUser = await db.collection<UserDoc>('users').findOne({ username: req.body.username })
   if (!targetUser) {
     res.status(404).json({ error: 'User not found' })
     return
   }
 
+  if (doc.editorType === 'markdown' && targetUser._id!.equals(doc.ownerUserId!)) {
+    res.status(400).json({ error: 'Owner role cannot be changed' }); return
+  }
   const targetRole = req.body.role || Role.READER
   await db.collection<DocumentAccessDoc>('document_access').updateOne(
     { documentId: doc._id!, userId: targetUser._id! },
@@ -107,6 +119,7 @@ router.post('/:docId/share', async (req: AuthRequest, res: any) =>
     { upsert: true }
   )
 
+  if (doc.editorType === 'markdown') disconnectMarkdown(doc.docId, targetUser._id!.toString())
   // ── 向被邀请用户推送实时通知 ──
   notifyUser(targetUser._id!.toString(), {
     type: 'document-shared',
@@ -125,7 +138,7 @@ router.post('/:docId/share', async (req: AuthRequest, res: any) =>
 router.delete('/:docId/access/:userId', async (req: AuthRequest, res: any) =>
 {
   const db = getDB()
-  const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
+  const doc = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId, deletedAt: null })
   if (!doc) {
     res.status(404).json({ error: 'Document not found' })
     return
@@ -137,11 +150,15 @@ router.delete('/:docId/access/:userId', async (req: AuthRequest, res: any) =>
     return
   }
 
+  if (!ObjectId.isValid(String(req.params.userId)) || doc.ownerUserId?.toString() === req.params.userId) {
+    res.status(400).json({ error: 'Invalid collaborator' }); return
+  }
   await db.collection<DocumentAccessDoc>('document_access').deleteOne({
     documentId: doc._id!,
     userId: new ObjectId(req.params.userId as string),
   })
 
+  if (doc.editorType === 'markdown') disconnectMarkdown(doc.docId, String(req.params.userId))
   // ── 通知被移除的用户 ──
   notifyUser(req.params.userId as string, {
     type: 'access-revoked',

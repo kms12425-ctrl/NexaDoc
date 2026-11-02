@@ -9,6 +9,8 @@ import { markdownTemplates } from '../../templates/markdown'
 import { documentsApi } from '../../services/api'
 import MarkdownHome from './MarkdownHome'
 
+vi.mock('../../markdown/useMarkdownNotifications', () => ({ useMarkdownNotifications: vi.fn() }))
+
 const url = 'http://localhost:3001/api/documents'
 const tagsUrl = 'http://localhost:3001/api/tags'
 const server = setupServer()
@@ -50,10 +52,10 @@ afterEach(() => { server.resetHandlers(); vi.restoreAllMocks(); vi.unstubAllEnvs
 afterAll(() => server.close())
 
 describe('MarkdownHome', () => {
-  it('renders the shared home layout and isolates owned Markdown documents', async () => {
+  it('renders the shared home layout and separates owned and shared Markdown documents', async () => {
     server.use(http.get(url, () => HttpResponse.json([
       document,
-      { ...document, id: 'shared', name: 'Shared Notes', shared: true },
+      { ...document, id: 'shared', name: 'Shared Notes', shared: true, abilities: { canView: true, canDelete: false } },
       { ...document, id: 'rich', name: 'Rich Notes', editorType: 'rich' },
     ])))
     renderHome()
@@ -62,9 +64,10 @@ describe('MarkdownHome', () => {
     expect(screen.getByRole('heading', { name: 'Start a new document' })).toBeInTheDocument()
     expect(within(screen.getByRole('group', { name: 'Template categories' })).getAllByRole('button')).toHaveLength(5)
     expect(within(card).getByText('#项目')).toBeInTheDocument()
-    expect(screen.queryByRole('article', { name: 'Open document: Shared Notes' })).not.toBeInTheDocument()
+    expect(within(screen.getByRole('region', { name: 'Shared Markdown documents' })).getByRole('article', { name: 'Open document: Shared Notes' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete Shared Notes' })).not.toBeInTheDocument()
     expect(screen.queryByRole('article', { name: 'Open document: Rich Notes' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Shared with me')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Shared with me/ })).toBeInTheDocument()
   })
 
   it('switches gallery categories and selects the corresponding template', async () => {
@@ -250,14 +253,18 @@ describe('MarkdownHome', () => {
 
   it('filters titles using URL state and clears the filter with Escape', async () => {
     const user = userEvent.setup()
-    server.use(http.get(url, () => HttpResponse.json([document, { ...document, id: 'md-cn', name: '会议纪要' }])))
+    const rows = [document, { ...document, id: 'md-cn', name: '会议纪要' }]
+    server.use(
+      http.get(url, () => HttpResponse.json(rows)),
+      http.get('http://localhost:3001/api/search', ({ request }) => HttpResponse.json(rows.filter((doc) => doc.name.toLowerCase().includes(new URL(request.url).searchParams.get('q')!.toLowerCase())))),
+    )
     renderHome('/markdown?q=project')
     expect(await screen.findByRole('article', { name: 'Open document: Project Plan' })).toBeInTheDocument()
     expect(screen.queryByRole('article', { name: 'Open document: 会议纪要' })).not.toBeInTheDocument()
     const search = screen.getByRole('searchbox', { name: 'Search Markdown' })
     await user.clear(search)
     await user.type(search, '会议')
-    expect(screen.getByRole('article', { name: 'Open document: 会议纪要' })).toBeInTheDocument()
+    expect(await screen.findByRole('article', { name: 'Open document: 会议纪要' })).toBeInTheDocument()
     expect(screen.queryByRole('article', { name: 'Open document: Project Plan' })).not.toBeInTheDocument()
     await user.keyboard('{Escape}')
 

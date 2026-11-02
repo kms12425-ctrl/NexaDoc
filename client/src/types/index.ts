@@ -23,6 +23,9 @@ export type EditorType = 'rich' | 'markdown'
 
 export interface MarkdownDocumentPayload {
   markdown: string
+  collaborationEnabled?: boolean
+  collaborationEpoch?: number
+  crdtState?: string
   revision: number
   updatedAt: number
 }
@@ -47,6 +50,7 @@ export interface DocumentMeta {
   name: string
   createdAt: number
   updatedAt: number
+  collaborationEnabled?: boolean
   editorType?: EditorType          // 缺省为 rich，兼容历史文档
   tags?: string[]
   revision?: number

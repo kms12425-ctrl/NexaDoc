@@ -2,7 +2,10 @@ import { Router, Request, Response } from 'express'
 import { ObjectId, type Filter } from 'mongodb'
 import { getDB } from '../db'
 import { AuthRequest } from '../auth'
-import { getAbilities, getDocumentAbilities, resolveAccess, Role } from '../rbac'
+import { getDocumentAbilities, resolveAccess, Role, markdownSharingEnabled, markdownCollabEnabled, MARKDOWN_SHARE_ROLES } from '../rbac'
+import { markdownScope } from '../markdown/access'
+import { notifyMarkdownMembers } from '../markdown/events'
+import { disconnectMarkdown } from '../markdown/collaboration'
 import { generateDocId } from '../docId'
 import type { DocumentAccessDoc, DocumentDoc } from '../types'
 import { MAX_MARKDOWN_BYTES, normalizeTags, serializeDocument } from '../markdown/metadata'
@@ -57,18 +60,18 @@ router.get('/', async (req: AuthRequest, res: Response) =>
     accessRecords.map((a) => [a.documentId.toString(), a.role as Role])
   )
 
-  const sharedDocs = type !== 'markdown' && docIds.length > 0
+  const sharedDocs = docIds.length > 0
     ? await db
       .collection<DocumentDoc>('documents')
       .find(
-        { _id: { $in: docIds }, deletedAt: null, editorType: { $ne: 'markdown' } },
+        { _id: { $in: docIds }, ownerUserId: { $ne: userId }, deletedAt: null, ...typeFilter },
         { projection: listProjection }
       )
       .sort({ updatedAt: -1 })
       .toArray()
     : []
 
-  const sharedResult = sharedDocs.map((d) => ({
+  const sharedResult = sharedDocs.filter((d) => d.editorType !== 'markdown' || (markdownSharingEnabled() && MARKDOWN_SHARE_ROLES.includes(roleMap.get(d._id!.toString())!))).map((d) => ({
     ...serializeDocument(d),
     abilities: getDocumentAbilities(d, roleMap.get(d._id!.toString()) || null),
     shared: true,
@@ -83,11 +86,11 @@ router.get('/suggest', async (req: AuthRequest, res: Response) => {
   const raw = typeof req.query.q === 'string' ? req.query.q.trim() : ''
   const requested = Number(req.query.limit)
   const limit = Number.isSafeInteger(requested) ? Math.min(Math.max(requested, 1), 20) : 8
-  const ownerUserId = new ObjectId(req.user!.id)
+  const { filter } = await markdownScope(req.user!.id)
   const escaped = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const contains = raw ? { title: { $regex: escaped, $options: 'i' } } : {}
   const documents = getDB().collection<DocumentDoc>('documents')
-  const matches = await documents.find({ ownerUserId, editorType: 'markdown', deletedAt: null, ...contains }, { projection: { docId: 1, title: 1, editorType: 1, updatedAt: 1 } }).sort({ updatedAt: -1 }).limit(100).toArray()
+  const matches = await documents.find({ ...filter, ...contains }, { projection: { docId: 1, title: 1, editorType: 1, updatedAt: 1 } }).sort({ updatedAt: -1 }).limit(100).toArray()
   const lower = raw.toLocaleLowerCase()
   const result = matches.sort((a, b) => Number(b.title.toLocaleLowerCase().startsWith(lower)) - Number(a.title.toLocaleLowerCase().startsWith(lower))).slice(0, limit)
   res.json(result.map((doc) => ({ id: doc.docId, title: doc.title, editorType: 'markdown' })))
@@ -162,6 +165,7 @@ router.get('/:docId/metadata', async (req: AuthRequest, res: Response) =>
   const { doc, abilities } = access
   res.json({
     ...serializeDocument(doc),
+    collaborationEnabled: doc.editorType === 'markdown' && markdownCollabEnabled(),
     abilities,
   })
 })
@@ -197,6 +201,7 @@ router.patch('/:docId/metadata', async (req: AuthRequest, res: Response) =>
     { $set: changes }
   )
   const updated = await db.collection<DocumentDoc>('documents').findOne({ docId: req.params.docId })
+  if (updated?.editorType === 'markdown') await notifyMarkdownMembers(updated, { type: 'document-metadata-changed' })
   res.json({ status: 'ok', ...(updated ? serializeDocument(updated) : {}) })
 })
 
@@ -218,7 +223,7 @@ router.delete('/:docId', async (req: AuthRequest, res: Response) =>
     userId: new ObjectId(req.user!.id),
   })
   const role: Role = isOwner ? Role.OWNER : (access?.role as Role) || Role.EDITOR
-  const abilities = getAbilities(role)
+  const abilities = getDocumentAbilities(doc, role)
   if (!abilities.canDelete) {
     res.status(403).json({ error: 'Insufficient permissions' })
     return
@@ -228,6 +233,10 @@ router.delete('/:docId', async (req: AuthRequest, res: Response) =>
     { docId: req.params.docId },
     { $set: { deletedAt: new Date() } }
   )
+  if (doc.editorType === 'markdown') {
+    disconnectMarkdown(doc.docId)
+    await notifyMarkdownMembers(doc, { type: 'access-revoked' })
+  }
   res.json({ status: 'ok' })
 })
 

@@ -54,6 +54,7 @@ export interface DocumentDoc
   searchText?: string
   outgoingLinks?: OutgoingLink[]
   markdownIndexedAt?: Date
+  markdownEpoch?: number         // Invalidates offline CRDT caches after a REST rollback write
   revision?: number               // 缺省为 0
   crdtState: Buffer              // Y.encodeStateAsUpdate(doc) 二进制
   crdtStateSize: number

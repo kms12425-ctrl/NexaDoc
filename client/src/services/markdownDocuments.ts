@@ -20,7 +20,7 @@ export const markdownDocumentsApi = {
     const documents = await documentsApi.list('markdown')
     if (!Array.isArray(documents)) throw new Error('Unable to load Markdown documents.')
     return documents.filter((doc): doc is MarkdownDocumentMeta =>
-      doc.editorType === 'markdown' && !doc.shared && doc.abilities?.canView !== false,
+      doc.editorType === 'markdown' && doc.abilities?.canView !== false,
     ).sort((a, b) => b.updatedAt - a.updatedAt)
   },
 
